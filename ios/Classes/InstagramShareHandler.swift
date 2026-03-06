@@ -72,18 +72,25 @@ class InstagramShareHandler {
         if let attributionURL {
             items[0]["com.instagram.sharedSticker.attributionURL"] = attributionURL
         }
-        if let backgroundImage, let data = imageData(from: backgroundImage) {
-            items[0]["com.instagram.sharedSticker.backgroundImage"] = data
+
+        // Background image → UIImage (matches reference approach)
+        if let backgroundImage, let image = UIImage(contentsOfFile: backgroundImage) {
+            items[0]["com.instagram.sharedSticker.backgroundImage"] = image
         }
+
+        // Background video → raw Data
         if let backgroundVideo {
             let videoURL = URL(fileURLWithPath: backgroundVideo)
             if let data = try? Data(contentsOf: videoURL) {
                 items[0]["com.instagram.sharedSticker.backgroundVideo"] = data
             }
         }
-        if let stickerImage, let data = imageData(from: stickerImage) {
-            items[0]["com.instagram.sharedSticker.stickerImage"] = data
+
+        // Sticker: GIF → raw Data (preserves animation), static → UIImage
+        if let stickerImage, let content = stickerContent(from: stickerImage) {
+            items[0]["com.instagram.sharedSticker.stickerImage"] = content
         }
+
         if let backgroundTopColor {
             items[0]["com.instagram.sharedSticker.backgroundTopColor"] = backgroundTopColor
         }
@@ -154,8 +161,13 @@ class InstagramShareHandler {
         return ["mp4", "mov", "avi", "m4v", "mkv"].contains(ext)
     }
 
-    private func imageData(from path: String) -> Data? {
-        guard let image = UIImage(contentsOfFile: path) else { return nil }
-        return image.pngData()
+    /// GIF → raw Data (preserves animation frames).
+    /// All other image formats → UIImage (matches reference behaviour).
+    private func stickerContent(from path: String) -> Any? {
+        let url = URL(fileURLWithPath: path)
+        if url.pathExtension.lowercased() == "gif" {
+            return try? Data(contentsOf: url)
+        }
+        return UIImage(contentsOfFile: path)
     }
 }

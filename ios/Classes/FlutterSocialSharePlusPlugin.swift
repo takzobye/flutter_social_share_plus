@@ -5,6 +5,7 @@ public class FlutterSocialSharePlusPlugin: NSObject, FlutterPlugin {
 
     private let instagramHandler = InstagramShareHandler()
     private let facebookHandler = FacebookShareHandler()
+    private let systemHandler = SystemShareHandler()
 
     public static func register(with registrar: FlutterPluginRegistrar) {
         let channel = FlutterMethodChannel(
@@ -72,6 +73,13 @@ public class FlutterSocialSharePlusPlugin: NSObject, FlutterPlugin {
                 attributionURL: args["attributionURL"] as? String,
                 result: result
             )
+
+        // System
+        case "shareSystem":
+            let text = args["text"] as? String
+            let filePaths = args["filePaths"] as? [String]
+            let subject = args["subject"] as? String
+            systemHandler.share(text: text, filePaths: filePaths, subject: subject, result: result)
 
         default:
             result(FlutterMethodNotImplemented)

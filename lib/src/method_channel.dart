@@ -91,4 +91,23 @@ final class MethodChannelSocialSharePlus extends SocialSharePlusPlatform {
     );
     return _parseResult(result);
   }
+
+  // === System ===
+
+  @override
+  Future<ShareResult> shareSystem({
+    String? text,
+    List<String>? filePaths,
+    String? subject,
+  }) async {
+    final result = await _channel.invokeMethod<String>(
+      'shareSystem',
+      {
+        'text': text,
+        'filePaths': filePaths,
+        'subject': subject,
+      },
+    );
+    return _parseResult(result);
+  }
 }

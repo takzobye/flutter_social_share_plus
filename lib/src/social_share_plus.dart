@@ -67,4 +67,17 @@ final class SocialSharePlus {
   /// Share to Facebook Story with optional sticker, background, and colors.
   static Future<ShareResult> facebookStory({required StoryConfig config}) =>
       _platform.facebookStory(config: config);
+
+  // === System ===
+
+  /// Share via the native OS share sheet.
+  ///
+  /// At least one of [text] or [filePaths] must be provided.
+  /// [subject] is used as the email subject when sharing via email apps.
+  static Future<ShareResult> shareSystem({
+    String? text,
+    List<String>? filePaths,
+    String? subject,
+  }) =>
+      _platform.shareSystem(text: text, filePaths: filePaths, subject: subject);
 }

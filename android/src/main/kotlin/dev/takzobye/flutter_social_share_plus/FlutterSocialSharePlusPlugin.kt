@@ -15,12 +15,14 @@ class FlutterSocialSharePlusPlugin : FlutterPlugin, MethodCallHandler, ActivityA
     private var activity: Activity? = null
     private lateinit var instagramHandler: InstagramShareHandler
     private lateinit var facebookHandler: FacebookShareHandler
+    private lateinit var systemHandler: SystemShareHandler
 
     override fun onAttachedToEngine(binding: FlutterPlugin.FlutterPluginBinding) {
         channel = MethodChannel(binding.binaryMessenger, "flutter_social_share_plus")
         channel.setMethodCallHandler(this)
         instagramHandler = InstagramShareHandler()
         facebookHandler = FacebookShareHandler()
+        systemHandler = SystemShareHandler()
     }
 
     override fun onMethodCall(call: MethodCall, result: Result) {
@@ -92,6 +94,14 @@ class FlutterSocialSharePlusPlugin : FlutterPlugin, MethodCallHandler, ActivityA
                     attributionURL = call.argument("attributionURL"),
                     result = result,
                 )
+            }
+
+            // System
+            "shareSystem" -> {
+                val text = call.argument<String>("text")
+                val filePaths = call.argument<List<String>>("filePaths")
+                val subject = call.argument<String>("subject")
+                systemHandler.share(activity, text, filePaths, subject, result)
             }
 
             else -> result.notImplemented()

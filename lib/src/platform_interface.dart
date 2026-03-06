@@ -67,4 +67,15 @@ abstract class SocialSharePlusPlatform extends PlatformInterface {
   Future<ShareResult> facebookStory({required StoryConfig config}) {
     throw UnimplementedError('facebookStory() has not been implemented.');
   }
+
+  // === System ===
+
+  /// Share via the native OS share sheet.
+  Future<ShareResult> shareSystem({
+    String? text,
+    List<String>? filePaths,
+    String? subject,
+  }) {
+    throw UnimplementedError('shareSystem() has not been implemented.');
+  }
 }

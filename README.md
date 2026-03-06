@@ -14,7 +14,7 @@ Add to your `pubspec.yaml`:
 
 ```yaml
 dependencies:
-  flutter_social_share_plus: ^1.0.0
+  flutter_social_share_plus: ^0.0.2
 ```
 
 ### Android Setup

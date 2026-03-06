@@ -12,3 +12,7 @@
 ## 0.0.3
 
 * Fix bug forgot to import Flutter in Swift
+
+## 0.0.4
+
+* Add Share System Feature

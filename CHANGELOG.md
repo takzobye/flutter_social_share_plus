@@ -8,3 +8,7 @@
 ## 0.0.2
 
 * Refactor upload image handling for Facebook and Instagram
+
+## 0.0.3
+
+* Fix bug forgot to import Flutter in Swift

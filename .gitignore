@@ -32,6 +32,8 @@ migrate_working_dir/
 /build/
 /coverage/
 
+/references
+
 .agent
 .agents
 .claude

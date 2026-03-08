@@ -1,6 +1,6 @@
 Pod::Spec.new do |s|
   s.name             = 'flutter_social_share_plus'
-  s.version          = '0.0.4'
+  s.version          = '0.1.0'
   s.summary          = 'Share content to Instagram and Facebook from Flutter.'
   s.description      = <<-DESC
 Flutter plugin for sharing content to Instagram and Facebook.

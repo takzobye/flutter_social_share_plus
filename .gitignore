@@ -31,10 +31,3 @@ migrate_working_dir/
 .flutter-plugins-dependencies
 /build/
 /coverage/
-
-/references
-
-.agent
-.agents
-.claude
-skills-lock.json

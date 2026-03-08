@@ -16,3 +16,7 @@
 ## 0.0.4
 
 * Add Share System Feature
+
+## 0.1.0
+
+* Update README.md, Update test code

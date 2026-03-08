@@ -20,7 +20,7 @@ A Flutter plugin for sharing content to Instagram and Facebook on Android and iO
 
 ```yaml
 dependencies:
-  flutter_social_share_plus: ^0.0.4
+  flutter_social_share_plus: ^0.1.0
 ```
 
 ---

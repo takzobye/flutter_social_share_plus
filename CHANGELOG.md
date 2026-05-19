@@ -20,4 +20,7 @@
 ## 0.1.0
 
 * Update README.md, Update test code
+
+## 0.2.0
+
 * Add Swift Package Manager support for iOS while keeping CocoaPods compatibility.

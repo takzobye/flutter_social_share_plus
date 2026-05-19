@@ -10,7 +10,10 @@ Supports feed posts, stories, reels, and direct messages.
   s.license          = { :file => '../LICENSE' }
   s.author           = { 'takzobye' => 'takzobye@dev.com' }
   s.source           = { :path => '.' }
-  s.source_files     = 'Classes/**/*'
+  s.source_files     = 'flutter_social_share_plus/Sources/flutter_social_share_plus/**/*.swift'
+  s.resource_bundles = {
+    'flutter_social_share_plus_privacy' => ['flutter_social_share_plus/Sources/flutter_social_share_plus/PrivacyInfo.xcprivacy']
+  }
   s.dependency 'Flutter'
   s.dependency 'FBSDKCoreKit', '~> 17.0'
   s.dependency 'FBSDKShareKit', '~> 17.0'

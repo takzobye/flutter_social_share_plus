@@ -5,8 +5,8 @@ homepage: https://github.com/takzobye/flutter_social_share_plus
 repository: https://github.com/takzobye/flutter_social_share_plus
 
 environment:
-  sdk: ^3.11.1
-  flutter: ">=3.32.0"
+  sdk: ^3.12.0
+  flutter: ">=3.44.0"
 
 dependencies:
   flutter:

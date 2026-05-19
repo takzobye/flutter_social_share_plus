@@ -100,9 +100,10 @@ Add inside `<application>` in `AndroidManifest.xml`:
 
 ## iOS Setup
 
+**Minimum Flutter version: 3.41.0**
 **Minimum deployment target: iOS 15.0**
 
-The Facebook SDK (`FBSDKCoreKit` and `FBSDKShareKit`) is included automatically via CocoaPods — no manual dependency needed.
+The Facebook SDK (`FBSDKCoreKit` and `FBSDKShareKit`) is included automatically through Swift Package Manager on Flutter projects with SPM enabled, and CocoaPods remains supported for projects that have not migrated yet.
 
 ### 1. Add URL schemes to `Info.plist`
 

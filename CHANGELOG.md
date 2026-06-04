@@ -24,3 +24,8 @@
 ## 0.2.0
 
 * Add Swift Package Manager support for iOS while keeping CocoaPods compatibility.
+
+## 0.2.1
+
+* Update iOS FBSDKCoreKit to 18.0
+

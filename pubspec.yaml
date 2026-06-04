@@ -1,6 +1,6 @@
 name: flutter_social_share_plus
 description: Share content to Instagram and Facebook from your Flutter app. Supports feed posts, stories, reels, and direct messages.
-version: 0.2.0
+version: 0.2.1
 homepage: https://github.com/takzobye/flutter_social_share_plus
 repository: https://github.com/takzobye/flutter_social_share_plus
 

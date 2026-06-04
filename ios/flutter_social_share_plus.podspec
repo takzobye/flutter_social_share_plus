@@ -15,8 +15,8 @@ Supports feed posts, stories, reels, and direct messages.
     'flutter_social_share_plus_privacy' => ['flutter_social_share_plus/Sources/flutter_social_share_plus/PrivacyInfo.xcprivacy']
   }
   s.dependency 'Flutter'
-  s.dependency 'FBSDKCoreKit', '~> 17.0'
-  s.dependency 'FBSDKShareKit', '~> 17.0'
+  s.dependency 'FBSDKCoreKit', '~> 18.0'
+  s.dependency 'FBSDKShareKit', '~> 18.0'
   s.platform         = :ios, '15.0'
 
   s.pod_target_xcconfig = {

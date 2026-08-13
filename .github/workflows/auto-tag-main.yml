@@ -1,0 +1,97 @@
+name: Tag main
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+concurrency:
+  group: tag-main
+  cancel-in-progress: false
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Create and push tag
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # 1. หา tag ล่าสุดที่อยู่ในประวัติของ commit ปัจจุบัน
+          latest_tag="$(
+            git for-each-ref \
+              --merged="$GITHUB_SHA" \
+              --sort=-version:refname \
+              --count=1 \
+              --format='%(refname:strip=2)' \
+              'refs/tags/v[0-9]*.[0-9]*.[0-9]*'
+          )"
+
+          if [ -n "$latest_tag" ]; then
+            commit_subjects="$(git log "${latest_tag}..${GITHUB_SHA}" --format='%s')"
+            commit_bodies="$(git log "${latest_tag}..${GITHUB_SHA}" --format='%B')"
+            version="${latest_tag#v}"
+            IFS='.' read -r major minor patch <<< "$version"
+          else
+            commit_subjects="$(git log "$GITHUB_SHA" --format='%s')"
+            commit_bodies="$(git log "$GITHUB_SHA" --format='%B')"
+            major=0
+            minor=0
+            patch=0
+          fi
+
+          # 2. ตัดสินใจว่าจะ bump อะไร
+          bump=""
+
+          # Major: มี BREAKING CHANGE หรือ type!:
+          if grep -Eq '^[[:space:]]*BREAKING([ -])CHANGE:' <<< "$commit_bodies" || \
+            grep -Eiq '^[[:alnum:]_-]+(\([^)]*\))?!:' <<< "$commit_subjects"; then
+            bump="major"
+
+          # Minor: มี feat:
+          elif grep -Eiq '^feat(\([^)]*\))?:' <<< "$commit_subjects"; then
+            bump="minor"
+
+          # Patch: มี fix:
+          elif grep -Eiq '^fix(\([^)]*\))?:' <<< "$commit_subjects"; then
+            bump="patch"
+
+          else
+            echo "No release-worthy Conventional Commit found → skipping tag"
+            exit 0
+          fi
+
+          # 3. คำนวณ version ใหม่
+          case "$bump" in
+            major)
+              major=$((major + 1))
+              minor=0
+              patch=0
+              ;;
+            minor)
+              minor=$((minor + 1))
+              patch=0
+              ;;
+            patch)
+              patch=$((patch + 1))
+              ;;
+          esac
+
+          next_tag="v${major}.${minor}.${patch}"
+          echo "Detected $bump → creating $next_tag"
+
+          # 4. สร้างและ push tag
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$next_tag" "$GITHUB_SHA" -m "Release $next_tag"
+          git push origin "$next_tag"

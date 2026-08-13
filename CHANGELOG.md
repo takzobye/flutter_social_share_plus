@@ -19,9 +19,9 @@ All notable changes to this package are documented here.
 - Added validation for local file paths, media types, image counts, Story backgrounds, hashtags, App IDs, and Story video size.
 - Added support for Instagram Feed images and videos.
 - Added support for Facebook Feed sharing with one to six images and an optional hashtag.
-- Added typed StoryConfig support for stickers, image/video backgrounds, gradient colors, and attribution URLs.
+- Added typed StoryConfig support for stickers, image/video backgrounds, gradient colors, and best-effort Story attribution metadata.
 - Added exhaustive result handling suitable for Dart pattern matching.
-- Added Android unit tests, Dart platform-channel tests, example widget tests, and integration coverage for all supported targets.
+- Added Android unit tests, Dart platform-channel tests, example widget tests, and an integration test covering availability for all supported targets.
 
 ### Android
 

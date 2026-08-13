@@ -14,11 +14,10 @@ class InstagramShareHandler {
             return
         }
 
-        val intent = Intent(Intent.ACTION_SEND).apply {
-            type = "*/*"
-            setPackage(INSTAGRAM_PACKAGE)
-        }
-        if (!ShareMedia.canHandle(activity, intent)) {
+        val intent = Intent(Intent.ACTION_SEND).setPackage(INSTAGRAM_PACKAGE)
+        if (!listOf("image/*", "video/*").any { type ->
+                ShareMedia.canHandle(activity, Intent(intent).setType(type))
+            }) {
             result.success(ShareResponse.unavailable())
             return
         }
@@ -97,7 +96,11 @@ class InstagramShareHandler {
             return
         }
 
-        ShareMedia.prepareAsync(activity, paths) { media, error ->
+        ShareMedia.prepareAsync(
+            activity,
+            paths,
+            maxVideoBytes = MAX_STORY_VIDEO_BYTES,
+        ) { media, error ->
             if (error != null) {
                 result.success(error)
                 return@prepareAsync
@@ -121,13 +124,6 @@ class InstagramShareHandler {
                 result.success(ShareResponse.failed("unsupported_media", "Background must be a video"))
                 return@prepareAsync
             }
-            if (backgroundVideo != null && backgroundVideo.file.length() > MAX_STORY_VIDEO_BYTES) {
-                result.success(
-                    ShareResponse.failed("invalid_input", "Story video must be 50 MiB or smaller")
-                )
-                return@prepareAsync
-            }
-
             val shareIntent = Intent(intent).apply {
                 putExtra("source_application", appId)
                 backgroundImage?.let { mediaFile ->

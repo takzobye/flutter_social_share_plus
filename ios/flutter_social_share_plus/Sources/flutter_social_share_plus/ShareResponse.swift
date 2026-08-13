@@ -54,6 +54,7 @@ enum ShareMedia {
 
     static func load(
         paths: [String],
+        maxVideoBytes: Int? = nil,
         completion: @escaping (Result<[URL: Data], ShareMediaError>) -> Void
     ) {
         DispatchQueue.global(qos: .userInitiated).async {
@@ -63,6 +64,16 @@ enum ShareMedia {
                 guard FileManager.default.isReadableFile(atPath: url.path) else {
                     DispatchQueue.main.async {
                         completion(.failure(ShareMediaError(ShareResponse.failed("file_not_found", "File not found: \(path)"))))
+                    }
+                    return
+                }
+                if let maxVideoBytes,
+                   mimeType(for: url)?.hasPrefix("video/") == true,
+                   let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
+                   let size = (attributes[.size] as? NSNumber)?.intValue,
+                   size > maxVideoBytes {
+                    DispatchQueue.main.async {
+                        completion(.failure(ShareMediaError(ShareResponse.failed("invalid_input", "Story video must be 50 MiB or smaller"))))
                     }
                     return
                 }

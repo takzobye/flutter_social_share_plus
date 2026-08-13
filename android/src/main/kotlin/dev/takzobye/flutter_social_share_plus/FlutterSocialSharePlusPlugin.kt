@@ -121,11 +121,16 @@ class FlutterSocialSharePlusPlugin : FlutterPlugin, MethodCallHandler, ActivityA
     }
 
     private fun isAvailable(target: String?): Boolean {
-        val intent = when (target) {
-            "instagramFeed" -> Intent(Intent.ACTION_SEND).apply {
-                type = "*/*"
-                setPackage(INSTAGRAM_PACKAGE)
+        if (target == "instagramFeed") {
+            return listOf("image/*", "video/*").any { type ->
+                val intent = Intent(Intent.ACTION_SEND).apply {
+                    this.type = type
+                    setPackage(INSTAGRAM_PACKAGE)
+                }
+                packageManagerCanHandle(intent, INSTAGRAM_PACKAGE)
             }
+        }
+        val intent = when (target) {
             "instagramStory" -> Intent(INSTAGRAM_STORY_ACTION).apply {
                 setPackage(INSTAGRAM_PACKAGE)
             }

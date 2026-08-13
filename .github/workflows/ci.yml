@@ -51,6 +51,8 @@ jobs:
       - run: flutter pub get
       - working-directory: example
         run: flutter pub get
+      - working-directory: example/android
+        run: ./gradlew :flutter_social_share_plus:test --console=plain
       - working-directory: example
         run: flutter build apk --debug
 

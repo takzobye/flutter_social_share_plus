@@ -87,21 +87,15 @@ final class InstagramShareHandler {
             }
         }
 
-        ShareMedia.load(paths: paths) { loaded in
+        ShareMedia.load(paths: paths, maxVideoBytes: 50 * 1024 * 1024) { loaded in
             guard case let .success(data) = loaded else {
                 if case let .failure(error) = loaded { result(error.response) }
                 return
             }
-            if let backgroundVideoPath,
-               let videoData = data[URL(fileURLWithPath: backgroundVideoPath)],
-               videoData.count > 50 * 1024 * 1024 {
-                result(ShareResponse.failed("invalid_input", "Story video must be 50 MiB or smaller"))
-                return
-            }
-
             var item = [String: Any]()
             if let attributionUrl {
-                item["com.instagram.sharedSticker.attributionURL"] = attributionUrl
+                // contentURL is the Story pasteboard key used by Meta's historical examples.
+                item["com.instagram.sharedSticker.contentURL"] = attributionUrl
             }
             if let backgroundImagePath {
                 item["com.instagram.sharedSticker.backgroundImage"] = data[URL(fileURLWithPath: backgroundImagePath)]

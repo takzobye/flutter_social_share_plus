@@ -111,22 +111,16 @@ final class FacebookShareHandler {
             }
         }
 
-        ShareMedia.load(paths: paths) { loaded in
+        ShareMedia.load(paths: paths, maxVideoBytes: 50 * 1024 * 1024) { loaded in
             guard case let .success(data) = loaded else {
                 if case let .failure(error) = loaded { result(error.response) }
                 return
             }
-            if let backgroundVideoPath,
-               let videoData = data[URL(fileURLWithPath: backgroundVideoPath)],
-               videoData.count > 50 * 1024 * 1024 {
-                result(ShareResponse.failed("invalid_input", "Story video must be 50 MiB or smaller"))
-                return
-            }
-
             var item = [String: Any](minimumCapacity: 5)
             item["com.facebook.sharedSticker.appID"] = appId
             if let attributionUrl {
-                item["com.facebook.sharedSticker.attributionURL"] = attributionUrl
+                // Keep the same Story metadata key across Meta targets.
+                item["com.facebook.sharedSticker.contentURL"] = attributionUrl
             }
             if let backgroundImagePath {
                 item["com.facebook.sharedSticker.backgroundImage"] = data[URL(fileURLWithPath: backgroundImagePath)]

@@ -111,14 +111,21 @@ Do not copy the plugin provider into the host manifest. Do not add a broad exter
 
 The defaults are privacy-first. Only enable Meta analytics or advertising identifiers when the host app has the required consent and Play Console declarations:
 
-    <meta-data
-        android:name="com.facebook.sdk.AutoLogAppEventsEnabled"
-        android:value="true" />
-    <meta-data
-        android:name="com.facebook.sdk.AdvertiserIDCollectionEnabled"
-        android:value="true" />
+    <manifest xmlns:android="http://schemas.android.com/apk/res/android"
+        xmlns:tools="http://schemas.android.com/tools">
+        <application>
+            <meta-data
+                android:name="com.facebook.sdk.AutoLogAppEventsEnabled"
+                android:value="true"
+                tools:replace="android:value" />
+            <meta-data
+                android:name="com.facebook.sdk.AdvertiserIDCollectionEnabled"
+                android:value="true"
+                tools:replace="android:value" />
+        </application>
+    </manifest>
 
-Otherwise leave both values false or omit the overrides.
+The `tools:replace` attributes are required because the plugin manifest supplies explicit privacy-first defaults. Otherwise leave both values false or omit the overrides.
 
 ### 3.4 Build Android
 
@@ -296,7 +303,7 @@ Rules:
 - Stickers and image backgrounds must be images; video backgrounds must be videos.
 - Story videos must be 50 MiB or smaller.
 - Colors are optional Flutter Color values.
-- attributionUrl is optional and forwarded to the target app.
+- attributionUrl is optional and forwarded as best-effort Story metadata (`contentURL` on iOS). Meta may ignore it on some app versions.
 
 ### 5.5 Facebook Feed
 

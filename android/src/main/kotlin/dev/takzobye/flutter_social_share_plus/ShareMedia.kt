@@ -27,11 +27,12 @@ internal object ShareMedia {
     fun prepareAsync(
         context: Context,
         paths: List<String>,
+        maxVideoBytes: Long? = null,
         callback: (List<PreparedMedia>?, Map<String, String>?) -> Unit,
     ) {
         executor.execute {
             val preparation = try {
-                prepare(context, paths) to null
+                prepare(context, paths, maxVideoBytes) to null
             } catch (error: PreparationException) {
                 null to ShareResponse.failed(error.code, error.message)
             } catch (error: Exception) {
@@ -82,7 +83,11 @@ internal object ShareMedia {
         }
     }
 
-    private fun prepare(context: Context, paths: List<String>): List<PreparedMedia> {
+    private fun prepare(
+        context: Context,
+        paths: List<String>,
+        maxVideoBytes: Long?,
+    ): List<PreparedMedia> {
         if (paths.isEmpty()) {
             throw PreparationException("invalid_input", "No media files provided")
         }
@@ -98,6 +103,9 @@ internal object ShareMedia {
             }
             val mimeType = mimeType(source)
                 ?: throw PreparationException("unsupported_media", "Unsupported media: $path")
+            if (maxVideoBytes != null && mimeType.startsWith("video/") && source.length() > maxVideoBytes) {
+                throw PreparationException("invalid_input", "Story video must be 50 MiB or smaller")
+            }
             val file = if (isAppFile(context, source)) source else copyToCache(context, source)
             val uri = FileProvider.getUriForFile(context, authority(context), file)
             PreparedMedia(file, uri, mimeType)

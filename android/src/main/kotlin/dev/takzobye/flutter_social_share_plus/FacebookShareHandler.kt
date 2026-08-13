@@ -35,6 +35,7 @@ class FacebookShareHandler {
     fun onDetachedFromActivityForConfigChanges() {
         removeActivityResultListener()
         activityBinding = null
+        finish(ShareResponse.failed("platform_error", "Activity recreated"))
     }
 
     fun onDetachedFromActivity() {
@@ -75,7 +76,11 @@ class FacebookShareHandler {
         }
 
         pendingResult = result
-        ShareMedia.prepareAsync(activity, paths) { media, error ->
+        ShareMedia.prepareAsync(
+            activity,
+            paths,
+            maxVideoBytes = MAX_STORY_VIDEO_BYTES,
+        ) { media, error ->
             if (error != null) {
                 finish(error)
                 return@prepareAsync
@@ -212,13 +217,6 @@ class FacebookShareHandler {
                 result.success(ShareResponse.failed("unsupported_media", "Background must be a video"))
                 return@prepareAsync
             }
-            if (backgroundVideo != null && backgroundVideo.file.length() > MAX_STORY_VIDEO_BYTES) {
-                result.success(
-                    ShareResponse.failed("invalid_input", "Story video must be 50 MiB or smaller")
-                )
-                return@prepareAsync
-            }
-
             val shareIntent = Intent(FACEBOOK_STORY_ACTION).apply {
                 setPackage(packageName)
                 putExtra("com.facebook.platform.extra.APPLICATION_ID", appId)

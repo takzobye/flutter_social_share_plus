@@ -83,6 +83,11 @@ internal object ShareMedia {
         }
     }
 
+    internal fun isAbsolutePath(path: String) = File(path).isAbsolute
+
+    internal fun videoExceedsLimit(file: File, mimeType: String, maxBytes: Long?) =
+        maxBytes != null && mimeType.startsWith("video/") && file.length() > maxBytes
+
     private fun prepare(
         context: Context,
         paths: List<String>,
@@ -97,13 +102,16 @@ internal object ShareMedia {
             if (path.isBlank()) {
                 throw PreparationException("invalid_input", "Media path is empty")
             }
+            if (!isAbsolutePath(path)) {
+                throw PreparationException("invalid_input", "Media path must be absolute: $path")
+            }
             val source = File(path)
             if (!source.isFile || !source.canRead()) {
                 throw PreparationException("file_not_found", "File not found: $path")
             }
             val mimeType = mimeType(source)
                 ?: throw PreparationException("unsupported_media", "Unsupported media: $path")
-            if (maxVideoBytes != null && mimeType.startsWith("video/") && source.length() > maxVideoBytes) {
+            if (videoExceedsLimit(source, mimeType, maxVideoBytes)) {
                 throw PreparationException("invalid_input", "Story video must be 50 MiB or smaller")
             }
             val file = if (isAppFile(context, source)) source else copyToCache(context, source)

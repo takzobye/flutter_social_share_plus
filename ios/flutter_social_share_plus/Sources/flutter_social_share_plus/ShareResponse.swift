@@ -42,6 +42,9 @@ enum ShareMedia {
         guard !path.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             return .failure(ShareMediaError(ShareResponse.failed("invalid_input", "Media path is empty")))
         }
+        guard path.hasPrefix("/") else {
+            return .failure(ShareMediaError(ShareResponse.failed("invalid_input", "Media path must be absolute: \(path)")))
+        }
         let url = URL(fileURLWithPath: path)
         guard FileManager.default.isReadableFile(atPath: url.path) else {
             return .failure(ShareMediaError(ShareResponse.failed("file_not_found", "File not found: \(path)")))

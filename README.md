@@ -460,4 +460,6 @@ Before release:
     flutter build apk --debug
     flutter build ios --simulator --no-codesign
 
+Also validate the iOS dependency path used by the host app (Swift Package Manager or CocoaPods) in a clean checkout.
+
 For a full working example, see the example/ app in this repository.

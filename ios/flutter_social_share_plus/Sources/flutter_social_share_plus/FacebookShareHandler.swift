@@ -4,6 +4,8 @@ import Flutter
 import UIKit
 
 final class FacebookShareHandler {
+    private var feedBusy = false
+
     func isFeedAvailable() -> Bool {
         guard let url = URL(string: "fb://") else { return false }
         return UIApplication.shared.canOpenURL(url)
@@ -50,6 +52,12 @@ final class FacebookShareHandler {
             urls.append(url)
         }
 
+        guard !feedBusy else {
+            result(ShareResponse.failed("busy", "A Facebook share is already open"))
+            return
+        }
+        feedBusy = true
+
         configurePrivacyDefaults()
         ApplicationDelegate.shared.initializeSDK()
         let content = SharePhotoContent()
@@ -58,15 +66,19 @@ final class FacebookShareHandler {
             content.hashtag = Hashtag(hashtag)
         }
 
-        let delegate = ShareDelegateHandler(result: result)
+        let delegate = ShareDelegateHandler(result: result) { [weak self] in
+            self?.feedBusy = false
+        }
         let dialog = ShareDialog(viewController: presenter, content: content, delegate: delegate)
         objc_setAssociatedObject(dialog, &associatedDelegateKey, delegate, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
 
         guard dialog.canShow else {
+            feedBusy = false
             result(ShareResponse.unavailable())
             return
         }
         if !dialog.show() {
+            feedBusy = false
             result(ShareResponse.failed("platform_error", "Unable to open Facebook"))
         }
     }
@@ -182,10 +194,12 @@ private var associatedDelegateKey: UInt8 = 0
 
 private final class ShareDelegateHandler: NSObject, SharingDelegate {
     private let result: FlutterResult
+    private let onFinish: () -> Void
     private var responded = false
 
-    init(result: @escaping FlutterResult) {
+    init(result: @escaping FlutterResult, onFinish: @escaping () -> Void) {
         self.result = result
+        self.onFinish = onFinish
     }
 
     func sharer(_ sharer: any Sharing, didCompleteWithResults results: [String: Any]) {
@@ -203,6 +217,7 @@ private final class ShareDelegateHandler: NSObject, SharingDelegate {
     private func respond(_ value: [String: String]) {
         guard !responded else { return }
         responded = true
+        onFinish()
         result(value)
     }
 }

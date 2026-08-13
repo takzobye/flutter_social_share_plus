@@ -76,11 +76,7 @@ class FacebookShareHandler {
         }
 
         pendingResult = result
-        ShareMedia.prepareAsync(
-            activity,
-            paths,
-            maxVideoBytes = MAX_STORY_VIDEO_BYTES,
-        ) { media, error ->
+        ShareMedia.prepareAsync(activity, paths) { media, error ->
             if (error != null) {
                 finish(error)
                 return@prepareAsync
@@ -193,7 +189,11 @@ class FacebookShareHandler {
             return
         }
 
-        ShareMedia.prepareAsync(activity, paths) { media, error ->
+        ShareMedia.prepareAsync(
+            activity,
+            paths,
+            maxVideoBytes = MAX_STORY_VIDEO_BYTES,
+        ) { media, error ->
             if (error != null) {
                 result.success(error)
                 return@prepareAsync

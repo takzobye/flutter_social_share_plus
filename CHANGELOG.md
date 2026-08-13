@@ -17,6 +17,8 @@ All notable changes to this package are documented here.
 
 - Added exact per-flow availability checks through ShareTarget and SocialSharePlus.isAvailable.
 - Added validation for local file paths, media types, image counts, Story backgrounds, hashtags, App IDs, and Story video size.
+- Rejected relative media paths consistently on Android and iOS.
+- Rejected oversized Story videos before copying or loading their contents.
 - Added support for Instagram Feed images and videos.
 - Added support for Facebook Feed sharing with one to six images and an optional hashtag.
 - Added typed StoryConfig support for stickers, image/video backgrounds, gradient colors, and best-effort Story attribution metadata.
@@ -32,6 +34,7 @@ All notable changes to this package are documented here.
 - Replaced bitmap decoding for Facebook Feed with URI-based SharePhoto sharing to reduce memory usage.
 - Added temporary URI grants, ClipData, exact package checks, and cleanup of cached share files older than 24 hours.
 - Fixed Facebook activity-result listener lifecycle handling and concurrent-request reporting.
+- Added the same Facebook Feed busy-state guard on iOS.
 - Added Android 11+ package visibility declarations for Instagram and Facebook targets.
 
 ### iOS

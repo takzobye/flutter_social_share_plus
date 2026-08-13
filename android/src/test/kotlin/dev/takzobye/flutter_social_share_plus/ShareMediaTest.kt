@@ -3,7 +3,9 @@ package dev.takzobye.flutter_social_share_plus
 import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 class ShareMediaTest {
     @Test
@@ -21,5 +23,24 @@ class ShareMediaTest {
             mapOf("status" to "failed", "code" to "busy", "message" to "Busy"),
             ShareResponse.failed("busy", "Busy"),
         )
+    }
+
+    @Test
+    fun mediaPathsMustBeAbsolute() {
+        assertTrue(ShareMedia.isAbsolutePath("/tmp/photo.jpg"))
+        assertFalse(ShareMedia.isAbsolutePath("photo.jpg"))
+    }
+
+    @Test
+    fun videoLimitOnlyAppliesToVideos() {
+        val file = File.createTempFile("share", ".mp4")
+        try {
+            file.writeBytes(ByteArray(11))
+            assertTrue(ShareMedia.videoExceedsLimit(file, "video/mp4", 10))
+            assertFalse(ShareMedia.videoExceedsLimit(file, "image/png", 10))
+            assertFalse(ShareMedia.videoExceedsLimit(file, "video/mp4", null))
+        } finally {
+            file.delete()
+        }
     }
 }

@@ -1,17 +1,7 @@
-# flutter_social_share_plus_skel_example
+# Flutter Social Share Plus example
 
-Demonstrates how to use the flutter_social_share_plus_skel plugin.
+This app demonstrates the four v1 flows with a local image or video selected through `image_picker`.
 
-## Getting Started
+Before running on a physical device, replace the placeholder Meta App ID and client token in the Android resources and iOS `Info.plist`, then configure the matching URL schemes in the Meta developer console.
 
-This project is a starting point for a Flutter application.
-
-A few resources to get you started if this is your first Flutter project:
-
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
-
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+The app is intentionally an SPM-first Flutter example. CocoaPods consumers continue to use the plugin podspec in `../ios`.

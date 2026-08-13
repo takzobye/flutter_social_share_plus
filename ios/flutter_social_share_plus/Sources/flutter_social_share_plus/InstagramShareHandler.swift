@@ -1,174 +1,186 @@
 import Flutter
-import UIKit
 import Photos
+import UIKit
 
-class InstagramShareHandler {
-
-    func shareDirect(message: String, result: @escaping FlutterResult) {
-        guard let encoded = message.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
-              let url = URL(string: "instagram://sharesheet?text=\(encoded)") else {
-            result("ERROR:Failed to encode message")
-            return
-        }
-        guard UIApplication.shared.canOpenURL(url) else {
-            result("APP_NOT_INSTALLED")
-            return
-        }
-        UIApplication.shared.open(url) { success in
-            result(success ? "SUCCESS" : "ERROR:Failed to open Instagram")
-        }
+final class InstagramShareHandler {
+    func isFeedAvailable() -> Bool {
+        guard let url = URL(string: "instagram://") else { return false }
+        return UIApplication.shared.canOpenURL(url)
     }
 
-    func shareFeed(filePath: String, result: @escaping FlutterResult) {
-        guard UIApplication.shared.canOpenURL(URL(string: "instagram://")!) else {
-            result("APP_NOT_INSTALLED")
+    func isStoryAvailable() -> Bool {
+        guard let url = URL(string: "instagram-stories://share") else { return false }
+        return UIApplication.shared.canOpenURL(url)
+    }
+
+    func shareFeed(filePath: String?, result: @escaping FlutterResult) {
+        guard isFeedAvailable() else {
+            result(ShareResponse.unavailable())
             return
         }
-        let fileURL = URL(fileURLWithPath: filePath)
-        let isVideo = isVideoFile(fileURL)
+        guard let path = filePath else {
+            result(ShareResponse.failed("invalid_input", "A media path is required"))
+            return
+        }
+        let validation = ShareMedia.validatePath(
+            path,
+            allowed: ["image/", "video/"]
+        )
+        guard case let .success(fileURL) = validation else {
+            if case let .failure(error) = validation {
+                result(error.response)
+            }
+            return
+        }
 
         requestPhotoLibraryAccess { granted in
             guard granted else {
-                result("ERROR:Photo library access denied")
+                result(ShareResponse.failed("permission_denied", "Photo library access was denied"))
                 return
             }
-            self.saveAndOpenInInstagram(fileURL: fileURL, isVideo: isVideo, result: result)
-        }
-    }
-
-    func shareReels(videoPath: String, result: @escaping FlutterResult) {
-        guard UIApplication.shared.canOpenURL(URL(string: "instagram://")!) else {
-            result("APP_NOT_INSTALLED")
-            return
-        }
-        let fileURL = URL(fileURLWithPath: videoPath)
-
-        requestPhotoLibraryAccess { granted in
-            guard granted else {
-                result("ERROR:Photo library access denied")
-                return
-            }
-            self.saveAndOpenInInstagram(fileURL: fileURL, isVideo: true, result: result)
+            self.saveAndOpen(fileURL: fileURL, result: result)
         }
     }
 
     func shareStory(
-        appId: String,
-        stickerImage: String?,
-        backgroundImage: String?,
-        backgroundVideo: String?,
+        appId: String?,
+        stickerPath: String?,
+        backgroundImagePath: String?,
+        backgroundVideoPath: String?,
         backgroundTopColor: String?,
         backgroundBottomColor: String?,
-        attributionURL: String?,
+        attributionUrl: String?,
         result: @escaping FlutterResult
     ) {
-        guard let url = URL(string: "instagram-stories://share?source_application=\(appId)"),
-              UIApplication.shared.canOpenURL(url) else {
-            result("APP_NOT_INSTALLED")
+        guard let appId, !appId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            result(ShareResponse.failed("invalid_input", "A Facebook App ID is required"))
+            return
+        }
+        guard backgroundImagePath == nil || backgroundVideoPath == nil else {
+            result(ShareResponse.failed("invalid_input", "A Story cannot contain both backgrounds"))
+            return
+        }
+        let paths = [stickerPath, backgroundImagePath, backgroundVideoPath].compactMap { $0 }
+        guard !paths.isEmpty else {
+            result(ShareResponse.failed("invalid_input", "Story content is required"))
+            return
+        }
+        guard let storyURL = URLComponents(
+            string: "instagram-stories://share"
+        ).flatMap({ components in
+            var components = components
+            components.queryItems = [URLQueryItem(name: "source_application", value: appId)]
+            return components.url
+        }), UIApplication.shared.canOpenURL(storyURL) else {
+            result(ShareResponse.unavailable())
             return
         }
 
-        var items: [[String: Any]] = [[:]]
-
-        if let attributionURL {
-            items[0]["com.instagram.sharedSticker.attributionURL"] = attributionURL
-        }
-
-        // Background image → UIImage (matches reference approach)
-        if let backgroundImage, let image = UIImage(contentsOfFile: backgroundImage) {
-            items[0]["com.instagram.sharedSticker.backgroundImage"] = image
-        }
-
-        // Background video → raw Data
-        if let backgroundVideo {
-            let videoURL = URL(fileURLWithPath: backgroundVideo)
-            if let data = try? Data(contentsOf: videoURL) {
-                items[0]["com.instagram.sharedSticker.backgroundVideo"] = data
+        for path in paths {
+            let allowed: Set<String> = path == backgroundVideoPath ? ["video/"] : ["image/"]
+            let validation = ShareMedia.validatePath(path, allowed: allowed)
+            guard case .success = validation else {
+                if case let .failure(error) = validation {
+                    result(error.response)
+                }
+                return
             }
         }
 
-        // Sticker: GIF → raw Data (preserves animation), static → UIImage
-        if let stickerImage, let content = stickerContent(from: stickerImage) {
-            items[0]["com.instagram.sharedSticker.stickerImage"] = content
-        }
+        ShareMedia.load(paths: paths) { loaded in
+            guard case let .success(data) = loaded else {
+                if case let .failure(error) = loaded { result(error.response) }
+                return
+            }
+            if let backgroundVideoPath,
+               let videoData = data[URL(fileURLWithPath: backgroundVideoPath)],
+               videoData.count > 50 * 1024 * 1024 {
+                result(ShareResponse.failed("invalid_input", "Story video must be 50 MiB or smaller"))
+                return
+            }
 
-        if let backgroundTopColor {
-            items[0]["com.instagram.sharedSticker.backgroundTopColor"] = backgroundTopColor
-        }
-        if let backgroundBottomColor {
-            items[0]["com.instagram.sharedSticker.backgroundBottomColor"] = backgroundBottomColor
-        }
+            var item = [String: Any]()
+            if let attributionUrl {
+                item["com.instagram.sharedSticker.attributionURL"] = attributionUrl
+            }
+            if let backgroundImagePath {
+                item["com.instagram.sharedSticker.backgroundImage"] = data[URL(fileURLWithPath: backgroundImagePath)]
+            }
+            if let backgroundVideoPath {
+                item["com.instagram.sharedSticker.backgroundVideo"] = data[URL(fileURLWithPath: backgroundVideoPath)]
+            }
+            if let stickerPath {
+                item["com.instagram.sharedSticker.stickerImage"] = data[URL(fileURLWithPath: stickerPath)]
+            }
+            if let backgroundTopColor {
+                item["com.instagram.sharedSticker.backgroundTopColor"] = backgroundTopColor
+            }
+            if let backgroundBottomColor {
+                item["com.instagram.sharedSticker.backgroundBottomColor"] = backgroundBottomColor
+            }
 
-        let options: [UIPasteboard.OptionsKey: Any] = [
-            .expirationDate: Date().addingTimeInterval(300),
-        ]
-        UIPasteboard.general.setItems(items, options: options)
-
-        UIApplication.shared.open(url) { success in
-            result(success ? "SUCCESS" : "ERROR:Failed to open Instagram Stories")
+            UIPasteboard.general.setItems(
+                [item],
+                options: [
+                    .expirationDate: Date().addingTimeInterval(300),
+                    .localOnly: true,
+                ]
+            )
+            UIApplication.shared.open(storyURL) { opened in
+                result(opened ? ShareResponse.launched() : ShareResponse.failed(
+                    "platform_error",
+                    "Unable to open Instagram Stories"
+                ))
+            }
         }
     }
 
-    // MARK: - Private
-
-    private func saveAndOpenInInstagram(
-        fileURL: URL,
-        isVideo: Bool,
-        result: @escaping FlutterResult
-    ) {
+    private func saveAndOpen(fileURL: URL, result: @escaping FlutterResult) {
         var localIdentifier: String?
+        let isVideo = ShareMedia.mimeType(for: fileURL)?.hasPrefix("video/") == true
 
         PHPhotoLibrary.shared().performChanges({
-            let request: PHAssetChangeRequest
-            if isVideo {
-                request = PHAssetChangeRequest.creationRequestForAssetFromVideo(atFileURL: fileURL)!
-            } else {
-                let image = UIImage(contentsOfFile: fileURL.path)!
-                request = PHAssetChangeRequest.creationRequestForAsset(from: image)
-            }
-            localIdentifier = request.placeholderForCreatedAsset?.localIdentifier
+            let request = isVideo
+                ? PHAssetChangeRequest.creationRequestForAssetFromVideo(atFileURL: fileURL)
+                : PHAssetChangeRequest.creationRequestForAssetFromImage(atFileURL: fileURL)
+            localIdentifier = request?.placeholderForCreatedAsset?.localIdentifier
         }) { success, error in
             DispatchQueue.main.async {
-                guard success, let identifier = localIdentifier else {
-                    result("ERROR:\(error?.localizedDescription ?? "Failed to save to library")")
+                guard success, let localIdentifier else {
+                    result(ShareResponse.failed(
+                        "platform_error",
+                        error?.localizedDescription ?? "Unable to save media"
+                    ))
                     return
                 }
-                let instagramURL = URL(string: "instagram://library?LocalIdentifier=\(identifier)")!
+                var components = URLComponents(string: "instagram://library")
+                components?.queryItems = [URLQueryItem(name: "LocalIdentifier", value: localIdentifier)]
+                guard let instagramURL = components?.url else {
+                    result(ShareResponse.failed("platform_error", "Unable to build Instagram URL"))
+                    return
+                }
                 UIApplication.shared.open(instagramURL) { opened in
-                    result(opened ? "SUCCESS" : "ERROR:Failed to open Instagram")
+                    result(opened ? ShareResponse.launched() : ShareResponse.failed(
+                        "platform_error",
+                        "Unable to open Instagram"
+                    ))
                 }
             }
         }
     }
 
     private func requestPhotoLibraryAccess(completion: @escaping (Bool) -> Void) {
-        let status = PHPhotoLibrary.authorizationStatus(for: .readWrite)
-        switch status {
+        switch PHPhotoLibrary.authorizationStatus(for: .addOnly) {
         case .authorized, .limited:
             completion(true)
         case .notDetermined:
-            PHPhotoLibrary.requestAuthorization(for: .readWrite) { newStatus in
+            PHPhotoLibrary.requestAuthorization(for: .addOnly) { status in
                 DispatchQueue.main.async {
-                    completion(newStatus == .authorized || newStatus == .limited)
+                    completion(status == .authorized || status == .limited)
                 }
             }
         default:
             completion(false)
         }
-    }
-
-    private func isVideoFile(_ url: URL) -> Bool {
-        let ext = url.pathExtension.lowercased()
-        return ["mp4", "mov", "avi", "m4v", "mkv"].contains(ext)
-    }
-
-    /// GIF → raw Data (preserves animation frames).
-    /// All other image formats → UIImage (matches reference behaviour).
-    private func stickerContent(from path: String) -> Any? {
-        let url = URL(fileURLWithPath: path)
-        if url.pathExtension.lowercased() == "gif" {
-            return try? Data(contentsOf: url)
-        }
-        return UIImage(contentsOfFile: path)
     }
 }

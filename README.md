@@ -1,243 +1,456 @@
 # flutter_social_share_plus
 
-A Flutter plugin for sharing content to Instagram and Facebook on Android and iOS.
+Native Flutter sharing to Instagram and Facebook on Android and iOS.
 
-## Features
+If you are not confident installing the package yourself, you can provide this README.md to an AI assistant and ask it to guide you through the setup. The installation instructions are intentionally comprehensive and cover the configuration required for both Android and iOS.
 
-| Feature | Android | iOS |
-|:--------|:-------:|:---:|
-| Instagram Direct (text) | ✅ | ✅ |
-| Instagram Feed (image/video) | ✅ | ✅ |
-| Instagram Feed (multiple files) | ✅ | ✅ |
-| Instagram Reels (video) | ✅ | ✅ |
+## Supported flows
+
+| Flow | Android | iOS |
+| --- | :---: | :---: |
+| Instagram Feed: one image or video | ✅ | ✅ |
 | Instagram Stories | ✅ | ✅ |
-| Facebook Feed (photos + hashtag) | ✅ | ✅ |
+| Facebook Feed: one to six images | ✅ | ✅ |
 | Facebook Stories | ✅ | ✅ |
-| System Share Sheet | ✅ | ✅ |
-| Check installed apps | ✅ | ✅ |
 
-## Installation
+The package opens the native Instagram or Facebook composer. It does not upload media to a package-owned server and does not implement server-side publishing or authentication.
 
-```yaml
-dependencies:
-  flutter_social_share_plus: ^0.1.0
-```
+## Requirements
 
----
+- Dart 3.12 or newer
+- Flutter 3.44 or newer (Flutter 3.47 is recommended)
+- Android API 24 or newer
+- iOS 15 or newer
+- Instagram and/or Facebook installed on the test device
+- A Meta developer App ID and client token
 
-## Android Setup
+## 1. Configure a Meta app
 
-### 1. Add Facebook SDK dependency
+Create an app in the [Meta for Developers](https://developers.facebook.com/apps/) dashboard and collect:
 
-In your app's `android/app/build.gradle`:
+- **App ID**: the numeric Meta/Facebook App ID. Use the same value in StoryConfig.appId.
+- **Client token**: available in the app's Settings → Advanced page.
 
-```gradle
-dependencies {
-    implementation 'com.facebook.android:facebook-android-sdk:latest.release'
-}
-```
+Configure the app platforms to match the host Flutter app:
 
-### 2. Add FileProvider
+- **Android**: add the exact applicationId from android/app/build.gradle or android/app/build.gradle.kts. Register debug and release key hashes.
+- **iOS**: add the exact Runner bundle identifier from Xcode.
 
-In `android/app/src/main/AndroidManifest.xml`, add inside `<application>`:
+Use production identifiers and signing keys in release builds. The values below are placeholders.
 
-```xml
-<provider
-    android:name="androidx.core.content.FileProvider"
-    android:authorities="${applicationId}.provider"
-    android:exported="false"
-    android:grantUriPermissions="true">
+### Android key hashes
+
+Meta may require the signing certificate hash for the Android platform. Generate the debug hash on macOS or Linux with:
+
+    keytool -exportcert -alias androiddebugkey -keystore ~/.android/debug.keystore -storepass android | openssl sha1 -binary | openssl base64
+
+Generate the release hash with the release keystore and alias used by the app. Add each debug/release hash to the Android platform settings for the Meta app.
+
+## 2. Add the package
+
+Run this from the Flutter project root:
+
+    flutter pub add flutter_social_share_plus
+    flutter pub get
+
+Or add it manually to pubspec.yaml:
+
+    dependencies:
+      flutter_social_share_plus: ^1.0.0
+
+The plugin includes its native Meta SDK dependencies and Android FileProvider. Do not add another Facebook SDK dependency or another provider for this package.
+
+## 3. Android setup
+
+### Android requirements
+
+- minSdk must be 24 or newer.
+- Use Java/Kotlin JVM target 17.
+- The plugin uses Meta Android Share SDK 18.2.3.
+
+### 3.1 Add Meta strings
+
+Create or edit:
+
+android/app/src/main/res/values/strings.xml
+
+Keep the existing resources element if the file already exists:
+
+    <resources>
+        <string name="facebook_app_id">YOUR_FACEBOOK_APP_ID</string>
+        <string name="facebook_client_token">YOUR_FACEBOOK_CLIENT_TOKEN</string>
+    </resources>
+
+Use the numeric App ID without an fb prefix.
+
+### 3.2 Add application metadata
+
+Open:
+
+android/app/src/main/AndroidManifest.xml
+
+Add these entries inside the host app's application element:
+
     <meta-data
-        android:name="android.support.FILE_PROVIDER_PATHS"
-        android:resource="@xml/file_paths" />
-</provider>
-```
+        android:name="com.facebook.sdk.ApplicationId"
+        android:value="@string/facebook_app_id" />
+    <meta-data
+        android:name="com.facebook.sdk.ClientToken"
+        android:value="@string/facebook_client_token" />
 
-Create `android/app/src/main/res/xml/file_paths.xml`:
+The plugin automatically contributes:
 
-```xml
-<?xml version="1.0" encoding="utf-8"?>
-<paths>
-    <cache-path name="cache" path="." />
-    <external-path name="external" path="." />
-</paths>
-```
+- a secure, non-exported FileProvider scoped to app files/cache;
+- package visibility for Instagram, Facebook, and Facebook Lite;
+- disabled Meta automatic app-event logging and advertising-ID collection;
+- removal of the AD_ID permission by default.
 
-### 3. Register Facebook App (required for Facebook features)
+Do not copy the plugin provider into the host manifest. Do not add a broad external-path provider. If the host app already has a provider with the same authority, remove the duplicate.
 
-Create `android/app/src/main/res/values/strings.xml`:
+### 3.3 Optional Meta privacy overrides
 
-```xml
-<?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <string name="facebook_app_id">YOUR_FACEBOOK_APP_ID</string>
-    <string name="facebook_client_token">YOUR_FACEBOOK_CLIENT_TOKEN</string>
-</resources>
-```
+The defaults are privacy-first. Only enable Meta analytics or advertising identifiers when the host app has the required consent and Play Console declarations:
 
-> Get your **App ID** and **Client Token** from [Meta for Developers](https://developers.facebook.com) → Your App → Settings → Basic / Advanced → Security.
+    <meta-data
+        android:name="com.facebook.sdk.AutoLogAppEventsEnabled"
+        android:value="true" />
+    <meta-data
+        android:name="com.facebook.sdk.AdvertiserIDCollectionEnabled"
+        android:value="true" />
 
-Add inside `<application>` in `AndroidManifest.xml`:
+Otherwise leave both values false or omit the overrides.
 
-```xml
-<meta-data
-    android:name="com.facebook.sdk.ApplicationId"
-    android:value="@string/facebook_app_id" />
-<meta-data
-    android:name="com.facebook.sdk.ClientToken"
-    android:value="@string/facebook_client_token" />
-<activity
-    android:name="com.facebook.FacebookActivity"
-    android:configChanges="keyboard|keyboardHidden|screenLayout|screenSize|orientation"
-    android:label="@string/app_name" />
-<provider
-    android:name="com.facebook.FacebookContentProvider"
-    android:authorities="com.facebook.app.FacebookContentProvider${facebook_app_id}"
-    android:exported="true" />
-```
+### 3.4 Build Android
 
----
+    flutter pub get
+    flutter clean
+    flutter build apk --debug
 
-## iOS Setup
+Install the debug APK on a device with Instagram or Facebook installed. isAvailable returns false when the requested target cannot receive the handoff.
 
-**Minimum Flutter version: 3.41.0**
-**Minimum deployment target: iOS 15.0**
+## 4. iOS setup
 
-The Facebook SDK (`FBSDKCoreKit` and `FBSDKShareKit`) is included automatically through Swift Package Manager on Flutter projects with SPM enabled, and CocoaPods remains supported for projects that have not migrated yet.
+### iOS requirements
 
-### 1. Add URL schemes to `Info.plist`
+- Deployment target iOS 15.0 or newer.
+- The plugin uses Facebook iOS SDK 18.1.x.
+- The host app must declare the URL schemes used by the target apps.
 
-```xml
-<key>CFBundleURLTypes</key>
-<array>
-    <dict>
-        <key>CFBundleURLSchemes</key>
-        <array>
-            <string>fbYOUR_FACEBOOK_APP_ID</string>
-        </array>
-    </dict>
-</array>
+The plugin supports Flutter's Swift Package Manager integration and CocoaPods. Use the dependency flow already used by the host project; do not add duplicate FBSDK packages manually.
 
-<key>LSApplicationQueriesSchemes</key>
-<array>
-    <string>instagram</string>
-    <string>instagram-stories</string>
-    <string>fb</string>
-    <string>fb-messenger</string>
-    <string>facebook-stories</string>
-    <string>fbauth2</string>
-    <string>fbapi</string>
-    <string>fbshareextension</string>
-</array>
-```
+### 4.1 Configure Info.plist
 
-### 2. Add Facebook credentials to `Info.plist`
+Open:
 
-```xml
-<key>FacebookAppID</key>
-<string>YOUR_FACEBOOK_APP_ID</string>
-<key>FacebookClientToken</key>
-<string>YOUR_FACEBOOK_CLIENT_TOKEN</string>
-<key>FacebookDisplayName</key>
-<string>YOUR_APP_NAME</string>
-```
+ios/Runner/Info.plist
 
-### 3. Add photo library usage description to `Info.plist`
+Add these entries inside the top-level dict:
 
-Required for Instagram Feed sharing (media is saved to the photo library first):
+    <key>FacebookAppID</key>
+    <string>YOUR_FACEBOOK_APP_ID</string>
+    <key>FacebookClientToken</key>
+    <string>YOUR_FACEBOOK_CLIENT_TOKEN</string>
+    <key>FacebookDisplayName</key>
+    <string>YOUR_APP_NAME</string>
 
-```xml
-<key>NSPhotoLibraryUsageDescription</key>
-<string>Required to share media to Instagram</string>
-<key>NSPhotoLibraryAddUsageDescription</key>
-<string>Required to save media for sharing</string>
-```
+    <!-- Privacy-safe defaults. Use true only with the required consent/declarations. -->
+    <key>FacebookAutoLogAppEventsEnabled</key>
+    <false/>
+    <key>FacebookAdvertiserIDCollectionEnabled</key>
+    <false/>
 
-### 4. Initialize Facebook SDK in `AppDelegate.swift`
+    <key>CFBundleURLTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleURLSchemes</key>
+            <array>
+                <!-- No spaces: fb + the numeric App ID. -->
+                <string>fbYOUR_FACEBOOK_APP_ID</string>
+            </array>
+        </dict>
+    </array>
 
-```swift
-import UIKit
-import Flutter
-import FBSDKCoreKit
+    <key>LSApplicationQueriesSchemes</key>
+    <array>
+        <string>instagram</string>
+        <string>instagram-stories</string>
+        <string>fb</string>
+        <string>facebook-stories</string>
+        <string>fbauth2</string>
+        <string>fbapi</string>
+        <string>fbshareextension</string>
+    </array>
 
-@main
-@objc class AppDelegate: FlutterAppDelegate {
-    override func application(
-        _ application: UIApplication,
-        didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
-    ) -> Bool {
-        ApplicationDelegate.shared.application(
-            application,
-            didFinishLaunchingWithOptions: launchOptions
-        )
-        GeneratedPluginRegistrant.register(with: self)
-        return super.application(application, didFinishLaunchingWithOptions: launchOptions)
+Merge these schemes with existing CFBundleURLTypes or LSApplicationQueriesSchemes entries; do not remove URL schemes used by other SDKs.
+
+Replace YOUR_FACEBOOK_APP_ID everywhere. The URL scheme is fb followed directly by the numeric App ID, for example fb1234567890.
+
+### 4.2 Add the Photos permission
+
+Instagram Feed saves the local file to Photos before opening Instagram. Add:
+
+    <key>NSPhotoLibraryAddUsageDescription</key>
+    <string>Save media so it can be shared to Instagram.</string>
+
+The plugin requests add-only Photos access. It does not request read access for this flow.
+
+### 4.3 Swift Package Manager
+
+For current Flutter projects, SPM is recommended:
+
+    flutter pub get
+    flutter build ios --simulator --no-codesign
+
+Flutter generates the plugin Swift package and resolves the Facebook iOS SDK from the plugin Package.swift. You normally do not need to add a package manually in Xcode. If Xcode asks to resolve packages, use File → Packages → Resolve Package Versions.
+
+### 4.4 CocoaPods
+
+If the host app uses CocoaPods, keep the normal Flutter ios/Podfile, set the platform to iOS 15 or newer, and run:
+
+    cd ios
+    pod install --repo-update
+    open Runner.xcworkspace
+
+The plugin podspec brings in FBSDKCoreKit and FBSDKShareKit 18.1.x. Do not add those pods again. Open Runner.xcworkspace, not Runner.xcodeproj, after installing pods.
+
+The plugin registers Facebook application and scene lifecycle callbacks automatically. No AppDelegate or SceneDelegate forwarding code is required.
+
+### 4.5 Build iOS
+
+    flutter pub get
+    flutter clean
+    flutter build ios --simulator --no-codesign
+
+For a device/archive build, configure the normal Apple signing team and provisioning profile, then use Xcode or flutter build ipa.
+
+## 5. Usage
+
+All share methods use readable local file paths. A URL, Flutter asset path, XFile object, or Android content URI is not accepted directly. Copy media to a local file first and pass its path.
+
+### 5.1 Import
+
+    import 'package:flutter/material.dart';
+    import 'package:flutter_social_share_plus/flutter_social_share_plus.dart';
+
+For image_picker, add that package separately and pass the picked file path:
+
+    flutter pub add image_picker
+
+    import 'package:image_picker/image_picker.dart';
+    final picked = await ImagePicker().pickMedia();
+    if (picked == null) return;
+
+    final result = await SocialSharePlus.instagramFeed(
+      filePath: picked.path,
+    );
+
+### 5.2 Check availability
+
+Check the exact flow before enabling a button:
+
+    final canShare = await SocialSharePlus.isAvailable(
+      ShareTarget.instagramFeed,
+    );
+
+Supported targets:
+
+    ShareTarget.instagramFeed
+    ShareTarget.instagramStory
+    ShareTarget.facebookFeed
+    ShareTarget.facebookStory
+
+This check only tests whether the native target can receive the handoff. It does not validate files, App IDs, permissions, or Meta dashboard settings.
+
+### 5.3 Instagram Feed
+
+Shares one local image or video:
+
+    final result = await SocialSharePlus.instagramFeed(
+      filePath: '/absolute/path/photo.jpg',
+    );
+
+Common supported extensions are JPEG, PNG, GIF, WebP, HEIC/HEIF, MP4, MOV, M4V, and AVI. The target app ultimately decides whether it accepts a particular codec.
+
+On iOS the plugin saves the file to Photos. On Android it grants Instagram a temporary read-only FileProvider URI.
+
+### 5.4 Instagram Stories
+
+Use StoryConfig:
+
+    final result = await SocialSharePlus.instagramStory(
+      config: StoryConfig(
+        appId: 'YOUR_FACEBOOK_APP_ID',
+        stickerPath: '/absolute/path/sticker.png',
+        backgroundImagePath: '/absolute/path/background.jpg',
+        backgroundTopColor: Colors.deepOrange,
+        backgroundBottomColor: Colors.blue,
+        attributionUrl: Uri.https('example.com', '/posts/123'),
+      ),
+    );
+
+Rules:
+
+- appId must be non-empty.
+- Provide a sticker or a background.
+- Use either backgroundImagePath or backgroundVideoPath, not both.
+- Stickers and image backgrounds must be images; video backgrounds must be videos.
+- Story videos must be 50 MiB or smaller.
+- Colors are optional Flutter Color values.
+- attributionUrl is optional and forwarded to the target app.
+
+### 5.5 Facebook Feed
+
+Shares one to six local images:
+
+    final result = await SocialSharePlus.facebookFeed(
+      imagePaths: [
+        '/absolute/path/one.jpg',
+        '/absolute/path/two.png',
+      ],
+      hashtag: '#flutter',
+    );
+
+Rules:
+
+- imagePaths must contain one to six readable image files.
+- Videos are not accepted by Facebook Feed.
+- hashtag is optional; when supplied, it must start with #.
+- Await the result and prevent duplicate taps while the dialog is open.
+
+### 5.6 Facebook Stories
+
+Facebook Stories use the same StoryConfig:
+
+    final result = await SocialSharePlus.facebookStory(
+      config: StoryConfig(
+        appId: 'YOUR_FACEBOOK_APP_ID',
+        backgroundImagePath: '/absolute/path/background.jpg',
+        stickerPath: '/absolute/path/sticker.png',
+        attributionUrl: Uri.https('example.com', '/posts/123'),
+      ),
+    );
+
+The same Story validation rules and 50 MiB video limit apply.
+
+### 5.7 Handle every result
+
+Use an exhaustive pattern switch:
+
+    void showShareResult(ShareResult result) {
+      final message = switch (result) {
+        ShareCompleted() => 'Facebook reported that sharing completed.',
+        ShareLaunched() => 'The target composer opened.',
+        ShareCancelled() => 'The user cancelled sharing.',
+        ShareUnavailable() => 'The target app or flow is unavailable.',
+        ShareFailed(:final code, :final message) => '$code: $message',
+      };
+
+      debugPrint(message);
     }
 
-    override func application(
-        _ app: UIApplication,
-        open url: URL,
-        options: [UIApplication.OpenURLOptionsKey: Any] = [:]
-    ) -> Bool {
-        ApplicationDelegate.shared.application(app, open: url, options: options)
-    }
-}
-```
+| Result | Meaning |
+| --- | --- |
+| ShareCompleted | Facebook Feed's native dialog reported success. |
+| ShareLaunched | A target app opened but cannot report final publishing. |
+| ShareCancelled | The user cancelled a native Facebook dialog. |
+| ShareUnavailable | The target app or requested capability is unavailable. |
+| ShareFailed | Validation, permission, busy-state, or platform failure. |
 
----
+ShareFailed.code values:
 
-## Usage
+    ShareErrorCode.invalidInput
+    ShareErrorCode.fileNotFound
+    ShareErrorCode.unsupportedMedia
+    ShareErrorCode.permissionDenied
+    ShareErrorCode.busy
+    ShareErrorCode.platformError
 
-```dart
-import 'package:flutter_social_share_plus/flutter_social_share_plus.dart';
+ShareCompleted is not a guarantee that Instagram or a Story was published. Deep-link flows return ShareLaunched because the target app owns the final publish action.
 
-// Check which apps are installed
-final apps = await SocialSharePlus.getInstalledApps();
-// apps = {SocialPlatform.instagram: true, SocialPlatform.facebook: false}
+## Validation and media behavior
 
-// Share to Instagram Feed
-final result = await SocialSharePlus.instagramFeed(filePath: '/path/to/image.jpg');
+- Paths must be local, readable files.
+- Relative paths, URLs, Flutter asset names, and directories are invalid.
+- Android copies files outside app-private directories into a scoped cache before sharing.
+- Android does not expose a broad external storage path through FileProvider.
+- iOS Story media uses a local-only pasteboard entry expiring after five minutes.
+- Android share cache files older than 24 hours are cleaned up.
+- Await each request; do not start a second Facebook Feed dialog while one is open.
 
-// Share to Instagram Story
-await SocialSharePlus.instagramStory(
-  config: StoryConfig(
-    appId: 'YOUR_FACEBOOK_APP_ID',
-    backgroundTopColor: '#FF5733',
-    backgroundBottomColor: '#3366FF',
-    stickerImage: '/path/to/sticker.png', // optional
-  ),
-);
+## Privacy and security
 
-// Share to Facebook Feed
-await SocialSharePlus.facebookFeed(
-  filePaths: ['/path/to/photo.jpg'],
-  hashtag: '#flutter',
-);
+- Meta automatic app-event logging is disabled by default.
+- Meta advertising-ID collection is disabled by default.
+- Android AD_ID permission is removed by default.
+- Android shared files use non-exported, read-only FileProvider URIs.
+- iOS requests add-only Photos access for Instagram Feed.
+- The host app remains responsible for Meta, Apple, Google Play, consent, and privacy declarations.
 
-// System share sheet
-await SocialSharePlus.shareSystem(
-  text: 'Check this out!',
-  filePaths: ['/path/to/file.jpg'],
-);
+## Troubleshooting
 
-// Handle results
-switch (result) {
-  case ShareSuccess():
-    print('Shared successfully');
-  case ShareError(:final message):
-    print('Error: $message');
-  case ShareAppNotInstalled():
-    print('App not installed');
-  case ShareCancelled():
-    print('User cancelled');
-}
-```
+### ShareUnavailable
 
----
+Check:
 
-## Notes
+1. Instagram or Facebook is installed.
+2. Android package visibility and application IDs are correct.
+3. iOS LSApplicationQueriesSchemes contains the schemes in this README.
+4. The installed target app supports the requested flow.
 
-- **Facebook Feed on Android** uses the Facebook Android SDK's native share dialog. The app must be registered on [Meta for Developers](https://developers.facebook.com).
-- **Instagram Feed on iOS** saves media to the photo library before sharing — `NSPhotoLibraryUsageDescription` is required.
-- **Instagram Feed multiple files** on iOS: only the first file is shared (iOS limitation).
-- **Facebook/Instagram Stories** share via deep-link intent — no SDK callback is returned, so the result is always `ShareSuccess` if the app is installed.
+### fileNotFound or unsupportedMedia
+
+Use an absolute local path. Confirm the file exists when the call starts and its extension matches the media type. Do not pass an asset name or remote URL.
+
+### Facebook opens nothing or returns platformError
+
+Verify:
+
+- Android strings and manifest metadata are inside the host application.
+- iOS FacebookAppID, FacebookClientToken, FacebookDisplayName, and fb<APP_ID> scheme are present.
+- Meta dashboard package/bundle IDs match the installed build.
+- Android debug/release key hashes are registered.
+- Native dependencies were fetched (flutter pub get; pod install for CocoaPods).
+
+### iOS cannot find FBSDK modules
+
+Run flutter clean and flutter pub get. For CocoaPods, run cd ios && pod install --repo-update and open Runner.xcworkspace. For SPM, use Xcode's File → Packages → Resolve Package Versions.
+
+### permissionDenied on iOS
+
+Add NSPhotoLibraryAddUsageDescription, then uninstall/reinstall the app so iOS can show the permission prompt again.
+
+### busy
+
+The Facebook Feed dialog is already active. Disable the share button until the previous Future<ShareResult> completes.
+
+## Generic system sharing
+
+This package focuses on Instagram and Facebook. For the general iOS/Android share sheet, use [share_plus](https://pub.dev/packages/share_plus).
+
+## Migration from 0.x
+
+- Replace ShareSuccess with ShareCompleted or ShareLaunched.
+- Replace ShareError, ShareAppNotInstalled, and old string parsing with ShareFailed, ShareUnavailable, and ShareCancelled.
+- Rename Story fields to stickerPath, backgroundImagePath, and backgroundVideoPath.
+- Story colors use Flutter Color; attribution uses Uri.
+- Replace facebookFeed(filePaths: ...) with facebookFeed(imagePaths: ...).
+- Remove Direct, Reels, Instagram multi-file Feed, and shareSystem.
+- Use share_plus for generic system sharing.
+
+## Release checklist
+
+Before release:
+
+1. Replace placeholder App ID, client token, bundle ID, package ID, and URL scheme values.
+2. Test each flow on physical devices with the matching Meta app installed.
+3. Test debug and release signing configurations, especially Android key hashes.
+4. Test cancelled, unavailable, invalid-file, permission-denied, and success cases.
+5. Review Meta, Apple, and Google Play privacy declarations.
+6. Run:
+
+    flutter analyze
+    flutter test
+    flutter build apk --debug
+    flutter build ios --simulator --no-codesign
+
+For a full working example, see the example/ app in this repository.

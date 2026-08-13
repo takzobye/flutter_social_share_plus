@@ -1,178 +1,214 @@
-import Flutter
-import UIKit
 import FBSDKCoreKit
 import FBSDKShareKit
+import Flutter
+import UIKit
 
-class FacebookShareHandler {
+final class FacebookShareHandler {
+    func isFeedAvailable() -> Bool {
+        guard let url = URL(string: "fb://") else { return false }
+        return UIApplication.shared.canOpenURL(url)
+    }
+
+    func isStoryAvailable() -> Bool {
+        guard let url = URL(string: "facebook-stories://") else { return false }
+        return UIApplication.shared.canOpenURL(url)
+    }
 
     func shareFeed(
-        filePaths: [String],
+        filePaths: [String]?,
         hashtag: String?,
+        presenter: UIViewController?,
         result: @escaping FlutterResult
     ) {
-        guard canOpenFacebook() else {
-            result("APP_NOT_INSTALLED")
+        let paths = filePaths ?? []
+        guard (1...6).contains(paths.count) else {
+            result(ShareResponse.failed("invalid_input", "Facebook Feed accepts one to six images"))
             return
         }
-        guard !filePaths.isEmpty else {
-            result("ERROR:No files provided")
+        if let hashtag, !hashtag.isEmpty, !hashtag.hasPrefix("#") {
+            result(ShareResponse.failed("invalid_input", "Hashtags must start with #"))
+            return
+        }
+        guard let presenter = topViewController(from: presenter) else {
+            result(ShareResponse.failed("platform_error", "No view controller available"))
+            return
+        }
+        guard isFeedAvailable() else {
+            result(ShareResponse.unavailable())
             return
         }
 
-        let photos: [SharePhoto] = filePaths.compactMap { path in
-            guard let image = UIImage(contentsOfFile: path) else { return nil }
-            let photo = SharePhoto(image: image, isUserGenerated: true)
-            return photo
+        var urls = [URL]()
+        for path in paths {
+            let validation = ShareMedia.validatePath(path, allowed: ["image/"])
+            guard case let .success(url) = validation else {
+                if case let .failure(error) = validation {
+                    result(error.response)
+                }
+                return
+            }
+            urls.append(url)
         }
 
-        guard !photos.isEmpty else {
-            result("ERROR:No valid images found")
-            return
-        }
-
+        configurePrivacyDefaults()
+        ApplicationDelegate.shared.initializeSDK()
         let content = SharePhotoContent()
-        content.photos = photos
+        content.photos = urls.map { SharePhoto(imageURL: $0, isUserGenerated: true) }
         if let hashtag, !hashtag.isEmpty {
             content.hashtag = Hashtag(hashtag)
         }
 
-        guard let viewController = topViewController() else {
-            result("ERROR:No view controller available")
+        let delegate = ShareDelegateHandler(result: result)
+        let dialog = ShareDialog(viewController: presenter, content: content, delegate: delegate)
+        objc_setAssociatedObject(dialog, &associatedDelegateKey, delegate, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+
+        guard dialog.canShow else {
+            result(ShareResponse.unavailable())
             return
         }
-
-        let delegate = ShareDelegateHandler(result: result)
-        let dialog = ShareDialog(viewController: viewController, content: content, delegate: delegate)
-
-        // Keep delegate alive until callback
-        objc_setAssociatedObject(dialog, "delegate", delegate, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
-
-        if dialog.canShow {
-            dialog.show()
-        } else {
-            result("ERROR:Cannot show Facebook share dialog")
+        if !dialog.show() {
+            result(ShareResponse.failed("platform_error", "Unable to open Facebook"))
         }
     }
 
     func shareStory(
-        appId: String,
-        stickerImage: String?,
-        backgroundImage: String?,
-        backgroundVideo: String?,
+        appId: String?,
+        stickerPath: String?,
+        backgroundImagePath: String?,
+        backgroundVideoPath: String?,
         backgroundTopColor: String?,
         backgroundBottomColor: String?,
-        attributionURL: String?,
+        attributionUrl: String?,
         result: @escaping FlutterResult
     ) {
-        guard let url = URL(string: "facebook-stories://share"),
-              UIApplication.shared.canOpenURL(url) else {
-            result("APP_NOT_INSTALLED")
+        guard let appId, !appId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            result(ShareResponse.failed("invalid_input", "A Facebook App ID is required"))
+            return
+        }
+        guard backgroundImagePath == nil || backgroundVideoPath == nil else {
+            result(ShareResponse.failed("invalid_input", "A Story cannot contain both backgrounds"))
+            return
+        }
+        let paths = [stickerPath, backgroundImagePath, backgroundVideoPath].compactMap { $0 }
+        guard !paths.isEmpty else {
+            result(ShareResponse.failed("invalid_input", "Story content is required"))
+            return
+        }
+        guard let storyURL = URL(string: "facebook-stories://share"),
+              UIApplication.shared.canOpenURL(storyURL) else {
+            result(ShareResponse.unavailable())
             return
         }
 
-        var items: [[String: Any]] = [[:]]
-
-        items[0]["com.facebook.sharedSticker.appID"] = appId
-
-        if let attributionURL {
-            items[0]["com.facebook.sharedSticker.attributionURL"] = attributionURL
-        }
-
-        // Background image → UIImage (matches reference approach)
-        if let backgroundImage, let image = UIImage(contentsOfFile: backgroundImage) {
-            items[0]["com.facebook.sharedSticker.backgroundImage"] = image
-        }
-
-        // Background video → raw Data
-        if let backgroundVideo {
-            let videoURL = URL(fileURLWithPath: backgroundVideo)
-            if let data = try? Data(contentsOf: videoURL) {
-                items[0]["com.facebook.sharedSticker.backgroundVideo"] = data
+        for path in paths {
+            let allowed: Set<String> = path == backgroundVideoPath ? ["video/"] : ["image/"]
+            let validation = ShareMedia.validatePath(path, allowed: allowed)
+            guard case .success = validation else {
+                if case let .failure(error) = validation {
+                    result(error.response)
+                }
+                return
             }
         }
 
-        // Sticker: GIF → raw Data (preserves animation), static → UIImage
-        if let stickerImage, let content = stickerContent(from: stickerImage) {
-            items[0]["com.facebook.sharedSticker.stickerImage"] = content
-        }
+        ShareMedia.load(paths: paths) { loaded in
+            guard case let .success(data) = loaded else {
+                if case let .failure(error) = loaded { result(error.response) }
+                return
+            }
+            if let backgroundVideoPath,
+               let videoData = data[URL(fileURLWithPath: backgroundVideoPath)],
+               videoData.count > 50 * 1024 * 1024 {
+                result(ShareResponse.failed("invalid_input", "Story video must be 50 MiB or smaller"))
+                return
+            }
 
-        if let backgroundTopColor {
-            items[0]["com.facebook.sharedSticker.backgroundTopColor"] = backgroundTopColor
-        }
-        if let backgroundBottomColor {
-            items[0]["com.facebook.sharedSticker.backgroundBottomColor"] = backgroundBottomColor
-        }
+            var item = [String: Any](minimumCapacity: 5)
+            item["com.facebook.sharedSticker.appID"] = appId
+            if let attributionUrl {
+                item["com.facebook.sharedSticker.attributionURL"] = attributionUrl
+            }
+            if let backgroundImagePath {
+                item["com.facebook.sharedSticker.backgroundImage"] = data[URL(fileURLWithPath: backgroundImagePath)]
+            }
+            if let backgroundVideoPath {
+                item["com.facebook.sharedSticker.backgroundVideo"] = data[URL(fileURLWithPath: backgroundVideoPath)]
+            }
+            if let stickerPath {
+                item["com.facebook.sharedSticker.stickerImage"] = data[URL(fileURLWithPath: stickerPath)]
+            }
+            if let backgroundTopColor {
+                item["com.facebook.sharedSticker.backgroundTopColor"] = backgroundTopColor
+            }
+            if let backgroundBottomColor {
+                item["com.facebook.sharedSticker.backgroundBottomColor"] = backgroundBottomColor
+            }
 
-        let options: [UIPasteboard.OptionsKey: Any] = [
-            .expirationDate: Date().addingTimeInterval(300),
-        ]
-        UIPasteboard.general.setItems(items, options: options)
-
-        UIApplication.shared.open(url) { success in
-            result(success ? "SUCCESS" : "ERROR:Failed to open Facebook Stories")
+            UIPasteboard.general.setItems(
+                [item],
+                options: [
+                    .expirationDate: Date().addingTimeInterval(300),
+                    .localOnly: true,
+                ]
+            )
+            UIApplication.shared.open(storyURL) { opened in
+                result(opened ? ShareResponse.launched() : ShareResponse.failed(
+                    "platform_error",
+                    "Unable to open Facebook Stories"
+                ))
+            }
         }
     }
 
-    // MARK: - Private
-
-    private func canOpenFacebook() -> Bool {
-        let schemes = ["fb://", "facebook-stories://"]
-        return schemes.contains { scheme in
-            guard let url = URL(string: scheme) else { return false }
-            return UIApplication.shared.canOpenURL(url)
+    private func topViewController(from root: UIViewController?) -> UIViewController? {
+        guard let root else { return nil }
+        if let presented = root.presentedViewController {
+            return topViewController(from: presented)
         }
+        if let navigation = root as? UINavigationController {
+            return topViewController(from: navigation.visibleViewController)
+        }
+        if let tab = root as? UITabBarController {
+            return topViewController(from: tab.selectedViewController)
+        }
+        return root
     }
 
-    private func topViewController() -> UIViewController? {
-        guard let scene = UIApplication.shared.connectedScenes
-            .compactMap({ $0 as? UIWindowScene })
-            .first,
-              let window = scene.windows.first(where: { $0.isKeyWindow }) else {
-            return nil
+    private func configurePrivacyDefaults() {
+        if Bundle.main.object(forInfoDictionaryKey: "FacebookAutoLogAppEventsEnabled") == nil {
+            Settings.shared.isAutoLogAppEventsEnabled = false
         }
-        var vc = window.rootViewController
-        while let presented = vc?.presentedViewController {
-            vc = presented
+        if Bundle.main.object(forInfoDictionaryKey: "FacebookAdvertiserIDCollectionEnabled") == nil {
+            Settings.shared.isAdvertiserIDCollectionEnabled = false
         }
-        return vc
-    }
-
-    /// GIF → raw Data (preserves animation frames).
-    /// All other image formats → UIImage (matches reference behaviour).
-    private func stickerContent(from path: String) -> Any? {
-        let url = URL(fileURLWithPath: path)
-        if url.pathExtension.lowercased() == "gif" {
-            return try? Data(contentsOf: url)
-        }
-        return UIImage(contentsOfFile: path)
     }
 }
 
-// MARK: - ShareDelegateHandler
+private var associatedDelegateKey: UInt8 = 0
 
-private class ShareDelegateHandler: NSObject, SharingDelegate {
+private final class ShareDelegateHandler: NSObject, SharingDelegate {
     private let result: FlutterResult
-    private var hasResponded = false
+    private var responded = false
 
     init(result: @escaping FlutterResult) {
         self.result = result
     }
 
     func sharer(_ sharer: any Sharing, didCompleteWithResults results: [String: Any]) {
-        guard !hasResponded else { return }
-        hasResponded = true
-        result("SUCCESS")
+        respond(ShareResponse.completed())
     }
 
     func sharer(_ sharer: any Sharing, didFailWithError error: any Error) {
-        guard !hasResponded else { return }
-        hasResponded = true
-        result("ERROR:\(error.localizedDescription)")
+        respond(ShareResponse.failed("platform_error", error.localizedDescription))
     }
 
     func sharerDidCancel(_ sharer: any Sharing) {
-        guard !hasResponded else { return }
-        hasResponded = true
-        result("CANCELLED")
+        respond(ShareResponse.cancelled())
+    }
+
+    private func respond(_ value: [String: String]) {
+        guard !responded else { return }
+        responded = true
+        result(value)
     }
 }

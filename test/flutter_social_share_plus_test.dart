@@ -1,64 +1,47 @@
+import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_social_share_plus/flutter_social_share_plus.dart';
-import 'package:flutter_social_share_plus/src/platform_interface.dart';
 import 'package:flutter_social_share_plus/src/method_channel.dart';
+import 'package:flutter_social_share_plus/src/platform_interface.dart';
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 
 class MockSocialSharePlusPlatform
     with MockPlatformInterfaceMixin
     implements SocialSharePlusPlatform {
   @override
-  Future<Map<SocialPlatform, bool>> getInstalledApps() async => {
-    SocialPlatform.instagram: true,
-    SocialPlatform.facebook: false,
-  };
+  Future<bool> isAvailable(ShareTarget target) async =>
+      target == ShareTarget.instagramFeed;
 
   @override
-  Future<ShareResult> instagramDirect({required String message}) async =>
-      const ShareSuccess();
-
-  @override
-  Future<ShareResult> instagramFeed({
-    required String filePath,
-    String? message,
-  }) async => const ShareSuccess();
-
-  @override
-  Future<ShareResult> instagramFeedMultiple({
-    required List<String> filePaths,
-  }) async => const ShareSuccess();
-
-  @override
-  Future<ShareResult> instagramReels({required String videoPath}) async =>
-      const ShareSuccess();
+  Future<ShareResult> instagramFeed({required String filePath}) async =>
+      const ShareLaunched();
 
   @override
   Future<ShareResult> instagramStory({required StoryConfig config}) async =>
-      const ShareSuccess();
+      const ShareLaunched();
 
   @override
   Future<ShareResult> facebookFeed({
-    required List<String> filePaths,
+    required List<String> imagePaths,
     String? hashtag,
-  }) async => const ShareAppNotInstalled();
+  }) async => const ShareCompleted();
 
   @override
   Future<ShareResult> facebookStory({required StoryConfig config}) async =>
-      const ShareAppNotInstalled();
-
-  @override
-  Future<ShareResult> shareSystem({
-    String? text,
-    List<String>? filePaths,
-    String? subject,
-  }) async => const ShareSuccess();
+      const ShareLaunched();
 }
 
 class ExtendsSocialSharePlusPlatform extends SocialSharePlusPlatform {}
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  const channel = MethodChannel('flutter_social_share_plus');
+
+  tearDown(() {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, null);
+  });
 
   group('SocialSharePlus', () {
     late SocialSharePlusPlatform originalPlatform;
@@ -68,351 +51,173 @@ void main() {
       SocialSharePlusPlatform.instance = MockSocialSharePlusPlatform();
     });
 
-    tearDown(() {
-      SocialSharePlusPlatform.instance = originalPlatform;
-    });
+    tearDown(() => SocialSharePlusPlatform.instance = originalPlatform);
 
-    test('getInstalledApps returns platform results', () async {
-      final apps = await SocialSharePlus.getInstalledApps();
-      expect(apps[SocialPlatform.instagram], true);
-      expect(apps[SocialPlatform.facebook], false);
-    });
-
-    test('instagramDirect returns ShareSuccess', () async {
-      final result = await SocialSharePlus.instagramDirect(message: 'test');
-      expect(result, isA<ShareSuccess>());
-    });
-
-    test('instagramFeed returns ShareSuccess', () async {
-      final result = await SocialSharePlus.instagramFeed(filePath: '/test.jpg');
-      expect(result, isA<ShareSuccess>());
-    });
-
-    test('instagramFeedMultiple returns ShareSuccess', () async {
-      final result = await SocialSharePlus.instagramFeedMultiple(
-        filePaths: ['/test.jpg'],
+    test('delegates availability and share calls', () async {
+      expect(
+        await SocialSharePlus.isAvailable(ShareTarget.instagramFeed),
+        isTrue,
       );
-      expect(result, isA<ShareSuccess>());
-    });
-
-    test('instagramReels returns ShareSuccess', () async {
-      final result = await SocialSharePlus.instagramReels(
-        videoPath: '/test.mp4',
+      expect(
+        await SocialSharePlus.instagramFeed(filePath: 'image.jpg'),
+        isA<ShareLaunched>(),
       );
-      expect(result, isA<ShareSuccess>());
-    });
-
-    test('instagramStory returns ShareSuccess', () async {
-      final result = await SocialSharePlus.instagramStory(
-        config: const StoryConfig(appId: '123'),
+      expect(
+        await SocialSharePlus.facebookFeed(imagePaths: ['image.jpg']),
+        isA<ShareCompleted>(),
       );
-      expect(result, isA<ShareSuccess>());
-    });
-
-    test('facebookFeed returns ShareAppNotInstalled', () async {
-      final result = await SocialSharePlus.facebookFeed(
-        filePaths: ['/test.jpg'],
-      );
-      expect(result, isA<ShareAppNotInstalled>());
-    });
-
-    test('facebookStory returns ShareAppNotInstalled', () async {
-      final result = await SocialSharePlus.facebookStory(
-        config: const StoryConfig(appId: '123'),
-      );
-      expect(result, isA<ShareAppNotInstalled>());
-    });
-
-    test('shareSystem returns ShareSuccess', () async {
-      final result = await SocialSharePlus.shareSystem(text: 'test');
-      expect(result, isA<ShareSuccess>());
-    });
-
-    test('ShareResult pattern matching works', () async {
-      final result = await SocialSharePlus.instagramDirect(message: 'test');
-      final message = switch (result) {
-        ShareSuccess() => 'success',
-        ShareError(:final message) => 'error: $message',
-        ShareAppNotInstalled() => 'not installed',
-        ShareCancelled() => 'cancelled',
-      };
-      expect(message, 'success');
-    });
-
-    test('default platform is MethodChannel', () {
-      expect(originalPlatform, isA<MethodChannelSocialSharePlus>());
     });
   });
 
   group('MethodChannelSocialSharePlus', () {
-    const channel = MethodChannel('flutter_social_share_plus');
     late MethodChannelSocialSharePlus platform;
 
-    setUp(() {
-      platform = MethodChannelSocialSharePlus();
-    });
+    setUp(() => platform = MethodChannelSocialSharePlus());
 
-    tearDown(() {
+    test('checks an exact target', () async {
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-          .setMockMethodCallHandler(channel, null);
-    });
-
-    test('getInstalledApps decodes successfully', () async {
-      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-          .setMockMethodCallHandler(channel, (MethodCall methodCall) async {
-            expect(methodCall.method, 'getInstalledApps');
-            return <String, bool>{'instagram': true, 'facebook': false};
+          .setMockMethodCallHandler(channel, (call) async {
+            expect(call.method, 'isAvailable');
+            expect(call.arguments, {'target': 'facebookStory'});
+            return {'available': true};
           });
 
-      final apps = await platform.getInstalledApps();
-      expect(apps[SocialPlatform.instagram], true);
-      expect(apps[SocialPlatform.facebook], false);
+      expect(await platform.isAvailable(ShareTarget.facebookStory), isTrue);
     });
 
-    test('getInstalledApps decodes null result gracefully', () async {
+    for (final status in <(String, Matcher)>[
+      ('completed', isA<ShareCompleted>()),
+      ('launched', isA<ShareLaunched>()),
+      ('cancelled', isA<ShareCancelled>()),
+      ('unavailable', isA<ShareUnavailable>()),
+    ]) {
+      test('parses ${status.$1}', () async {
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, (_) async {
+              return {'status': status.$1};
+            });
+
+        expect(await platform.instagramFeed(filePath: 'image.jpg'), status.$2);
+      });
+    }
+
+    test('parses a typed failure', () async {
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-          .setMockMethodCallHandler(channel, (MethodCall methodCall) async {
-            return null;
+          .setMockMethodCallHandler(channel, (_) async {
+            return {
+              'status': 'failed',
+              'code': 'file_not_found',
+              'message': 'Missing image',
+            };
           });
 
-      final apps = await platform.getInstalledApps();
-      expect(apps[SocialPlatform.instagram], false);
-      expect(apps[SocialPlatform.facebook], false);
+      final result = await platform.instagramFeed(filePath: 'image.jpg');
+      expect(result, isA<ShareFailed>());
+      expect((result as ShareFailed).code, ShareErrorCode.fileNotFound);
+      expect(result.message, 'Missing image');
     });
 
-    group('Responses parsing', () {
-      void mockResponse(String? response) {
-        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-            .setMockMethodCallHandler(channel, (MethodCall methodCall) async {
-              return response;
-            });
-      }
+    test('maps malformed responses to platform errors', () async {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (_) async => 'SUCCESS');
 
-      test('SUCCESS -> ShareSuccess', () async {
-        mockResponse('SUCCESS');
-        expect(
-          await platform.instagramDirect(message: ''),
-          isA<ShareSuccess>(),
-        );
-      });
-
-      test('APP_NOT_INSTALLED -> ShareAppNotInstalled', () async {
-        mockResponse('APP_NOT_INSTALLED');
-        expect(
-          await platform.instagramDirect(message: ''),
-          isA<ShareAppNotInstalled>(),
-        );
-      });
-
-      test('CANCELLED -> ShareCancelled', () async {
-        mockResponse('CANCELLED');
-        expect(
-          await platform.instagramDirect(message: ''),
-          isA<ShareCancelled>(),
-        );
-      });
-
-      test('ERROR: raw message -> ShareError', () async {
-        mockResponse('ERROR: invalid payload');
-        final result = await platform.instagramDirect(message: '');
-        expect(result, isA<ShareError>());
-        expect((result as ShareError).message, ' invalid payload');
-      });
-
-      test('Unknown string -> ShareError', () async {
-        mockResponse('WEIRD_STRING');
-        final result = await platform.instagramDirect(message: '');
-        expect(result, isA<ShareError>());
-        expect((result as ShareError).message, 'WEIRD_STRING');
-      });
-
-      test('Null string -> ShareError', () async {
-        mockResponse(null);
-        final result = await platform.instagramDirect(message: '');
-        expect(result, isA<ShareError>());
-        expect((result as ShareError).message, 'Unknown error');
-      });
+      final result = await platform.instagramFeed(filePath: 'image.jpg');
+      expect(result, isA<ShareFailed>());
+      expect((result as ShareFailed).code, ShareErrorCode.platformError);
     });
 
-    group('Method invocation parameters', () {
-      Future<void> testMethod(
-        String expectedMethod,
-        Map<String, dynamic> expectedArgs,
-        Future<void> Function() invoker,
-      ) async {
-        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-            .setMockMethodCallHandler(channel, (MethodCall methodCall) async {
-              expect(methodCall.method, expectedMethod);
-              expect(methodCall.arguments, expectedArgs);
-              return 'SUCCESS';
+    test('sends the v1 feed arguments', () async {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+            expect(call.method, 'facebookFeed');
+            expect(call.arguments, {
+              'imagePaths': ['one.jpg', 'two.png'],
+              'hashtag': '#flutter',
             });
-        await invoker();
-      }
+            return {'status': 'completed'};
+          });
 
-      test(
-        'instagramDirect',
-        () => testMethod('instagramDirect', {
-          'message': 'hi',
-        }, () => platform.instagramDirect(message: 'hi')),
+      final result = await platform.facebookFeed(
+        imagePaths: ['one.jpg', 'two.png'],
+        hashtag: '#flutter',
       );
+      expect(result, isA<ShareCompleted>());
+    });
 
-      test(
-        'instagramFeed',
-        () => testMethod(
-          'instagramFeed',
-          {'filePath': 'file.jpg', 'message': 'hi'},
-          () => platform.instagramFeed(filePath: 'file.jpg', message: 'hi'),
+    test('serializes StoryConfig internally', () async {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+            expect(call.method, 'instagramStory');
+            expect(call.arguments, {
+              'appId': '123',
+              'stickerPath': '/sticker.png',
+              'backgroundImagePath': '/background.jpg',
+              'backgroundVideoPath': null,
+              'backgroundTopColor': '#F44336',
+              'backgroundBottomColor': null,
+              'attributionUrl': 'https://example.com/story',
+            });
+            return {'status': 'launched'};
+          });
+
+      final result = await platform.instagramStory(
+        config: StoryConfig(
+          appId: '123',
+          stickerPath: '/sticker.png',
+          backgroundImagePath: '/background.jpg',
+          backgroundTopColor: Colors.red,
+          attributionUrl: Uri.parse('https://example.com/story'),
         ),
       );
-
-      test(
-        'instagramFeed with null message',
-        () => testMethod(
-          'instagramFeed',
-          {'filePath': 'file.jpg', 'message': null},
-          () => platform.instagramFeed(filePath: 'file.jpg', message: null),
-        ),
-      );
-
-      test(
-        'instagramFeedMultiple',
-        () => testMethod(
-          'instagramFeedMultiple',
-          {
-            'filePaths': ['file.jpg'],
-          },
-          () => platform.instagramFeedMultiple(filePaths: ['file.jpg']),
-        ),
-      );
-
-      test(
-        'instagramReels',
-        () => testMethod('instagramReels', {
-          'videoPath': 'video.mp4',
-        }, () => platform.instagramReels(videoPath: 'video.mp4')),
-      );
-
-      test('instagramStory', () {
-        const config = StoryConfig(appId: '123', backgroundTopColor: '#000');
-        return testMethod(
-          'instagramStory',
-          config.toMap(),
-          () => platform.instagramStory(config: config),
-        );
-      });
-
-      test(
-        'facebookFeed',
-        () => testMethod(
-          'facebookFeed',
-          {
-            'filePaths': ['file.jpg'],
-            'hashtag': '#test',
-          },
-          () =>
-              platform.facebookFeed(filePaths: ['file.jpg'], hashtag: '#test'),
-        ),
-      );
-
-      test('facebookStory', () {
-        const config = StoryConfig(appId: '123', backgroundTopColor: '#000');
-        return testMethod(
-          'facebookStory',
-          config.toMap(),
-          () => platform.facebookStory(config: config),
-        );
-      });
-
-      test(
-        'shareSystem',
-        () => testMethod('shareSystem', {
-          'text': 'hi',
-          'filePaths': null,
-          'subject': null,
-        }, () => platform.shareSystem(text: 'hi')),
-      );
+      expect(result, isA<ShareLaunched>());
     });
   });
 
-  group('SocialSharePlusPlatform base class', () {
-    test('Throws UnimplementedError', () async {
-      final base = ExtendsSocialSharePlusPlatform();
-      expect(() => base.getInstalledApps(), throwsUnimplementedError);
-      expect(() => base.instagramDirect(message: ''), throwsUnimplementedError);
-      expect(() => base.instagramFeed(filePath: ''), throwsUnimplementedError);
-      expect(
-        () => base.instagramFeedMultiple(filePaths: []),
-        throwsUnimplementedError,
-      );
-      expect(
-        () => base.instagramReels(videoPath: ''),
-        throwsUnimplementedError,
-      );
-      expect(
-        () => base.instagramStory(config: const StoryConfig(appId: '1')),
-        throwsUnimplementedError,
-      );
-      expect(() => base.facebookFeed(filePaths: []), throwsUnimplementedError);
-      expect(
-        () => base.facebookStory(config: const StoryConfig(appId: '1')),
-        throwsUnimplementedError,
-      );
-      expect(() => base.shareSystem(), throwsUnimplementedError);
-    });
+  test('base platform methods remain unimplemented', () {
+    final platform = ExtendsSocialSharePlusPlatform();
+    expect(
+      () => platform.isAvailable(ShareTarget.instagramFeed),
+      throwsUnimplementedError,
+    );
+    expect(
+      () => platform.instagramFeed(filePath: ''),
+      throwsUnimplementedError,
+    );
+    expect(
+      () => platform.instagramStory(config: const StoryConfig(appId: '1')),
+      throwsUnimplementedError,
+    );
+    expect(
+      () => platform.facebookFeed(imagePaths: []),
+      throwsUnimplementedError,
+    );
+    expect(
+      () => platform.facebookStory(config: const StoryConfig(appId: '1')),
+      throwsUnimplementedError,
+    );
   });
 
-  group('StoryConfig', () {
-    test('toMap includes all fields', () {
-      const config = StoryConfig(
+  group('ShareConfig and results', () {
+    test('StoryConfig exposes typed values', () {
+      final config = StoryConfig(
         appId: '123',
-        stickerImage: '/sticker.png',
-        backgroundTopColor: '#FF0000',
-        backgroundImage: '/bg.png',
-        backgroundVideo: '/bg.mp4',
-        backgroundBottomColor: '#000000',
-        attributionURL: 'http://example.com',
+        backgroundTopColor: Colors.red,
+        attributionUrl: Uri.parse('https://example.com'),
       );
-      final map = config.toMap();
-      expect(map['appId'], '123');
-      expect(map['stickerImage'], '/sticker.png');
-      expect(map['backgroundImage'], '/bg.png');
-      expect(map['backgroundVideo'], '/bg.mp4');
-      expect(map['backgroundTopColor'], '#FF0000');
-      expect(map['backgroundBottomColor'], '#000000');
-      expect(map['attributionURL'], 'http://example.com');
+      expect(config.hasContent, isFalse);
+      expect(config.backgroundTopColor, Colors.red);
+      expect(config.attributionUrl, Uri.parse('https://example.com'));
     });
 
-    test('toMap with missing fields has nulls', () {
-      const config = StoryConfig(appId: '123');
-      final map = config.toMap();
-      expect(map['stickerImage'], isNull);
-    });
-  });
-
-  group('ShareResult', () {
-    test('ShareSuccess', () {
-      expect(const ShareSuccess().toString(), 'ShareSuccess');
-    });
-
-    test('ShareAppNotInstalled', () {
-      expect(const ShareAppNotInstalled().toString(), 'ShareAppNotInstalled');
-    });
-
-    test('ShareCancelled', () {
+    test('result strings are stable', () {
+      expect(const ShareCompleted().toString(), 'ShareCompleted');
+      expect(const ShareLaunched().toString(), 'ShareLaunched');
+      expect(const ShareUnavailable().toString(), 'ShareUnavailable');
       expect(const ShareCancelled().toString(), 'ShareCancelled');
-    });
-
-    test('ShareError has message', () {
-      const error = ShareError('something failed');
-      expect(error.message, 'something failed');
-      expect(error.toString(), 'ShareError(something failed)');
-    });
-
-    test('isSuccess returns correctly', () {
-      expect(const ShareSuccess().isSuccess, true);
-      expect(const ShareError('x').isSuccess, false);
-      expect(const ShareAppNotInstalled().isSuccess, false);
-      expect(const ShareCancelled().isSuccess, false);
+      expect(
+        const ShareFailed(ShareErrorCode.busy, 'Busy').toString(),
+        'ShareFailed(ShareErrorCode.busy, Busy)',
+      );
     });
   });
 }

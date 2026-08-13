@@ -1,10 +1,10 @@
 Pod::Spec.new do |s|
   s.name             = 'flutter_social_share_plus'
-  s.version          = '0.1.0'
+  s.version          = '1.0.0'
   s.summary          = 'Share content to Instagram and Facebook from Flutter.'
   s.description      = <<-DESC
 Flutter plugin for sharing content to Instagram and Facebook.
-Supports feed posts, stories, reels, and direct messages.
+Supports Instagram and Facebook feed posts and stories.
                        DESC
   s.homepage         = 'https://github.com/takzobye/flutter_social_share_plus'
   s.license          = { :file => '../LICENSE' }
@@ -15,8 +15,8 @@ Supports feed posts, stories, reels, and direct messages.
     'flutter_social_share_plus_privacy' => ['flutter_social_share_plus/Sources/flutter_social_share_plus/PrivacyInfo.xcprivacy']
   }
   s.dependency 'Flutter'
-  s.dependency 'FBSDKCoreKit', '~> 17.0'
-  s.dependency 'FBSDKShareKit', '~> 17.0'
+  s.dependency 'FBSDKCoreKit', '~> 18.1'
+  s.dependency 'FBSDKShareKit', '~> 18.1'
   s.platform         = :ios, '15.0'
 
   s.pod_target_xcconfig = {

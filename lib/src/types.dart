@@ -1,39 +1,30 @@
-/// Result of a social share operation.
+import 'package:flutter/material.dart';
+
+/// A destination supported by the plugin.
+enum ShareTarget { instagramFeed, instagramStory, facebookFeed, facebookStory }
+
+/// The result of a share request.
 sealed class ShareResult {
   const ShareResult();
-
-  /// Whether the share completed successfully.
-  bool get isSuccess => this is ShareSuccess;
 }
 
-/// The share completed successfully.
-final class ShareSuccess extends ShareResult {
-  const ShareSuccess();
+/// The Facebook share dialog reported that sharing completed.
+final class ShareCompleted extends ShareResult {
+  const ShareCompleted();
 
   @override
-  String toString() => 'ShareSuccess';
+  String toString() => 'ShareCompleted';
 }
 
-/// The share failed with an error.
-final class ShareError extends ShareResult {
-  const ShareError(this.message);
-
-  /// A description of what went wrong.
-  final String message;
+/// The target app opened, but it cannot report whether publishing completed.
+final class ShareLaunched extends ShareResult {
+  const ShareLaunched();
 
   @override
-  String toString() => 'ShareError($message)';
+  String toString() => 'ShareLaunched';
 }
 
-/// The target app is not installed on the device.
-final class ShareAppNotInstalled extends ShareResult {
-  const ShareAppNotInstalled();
-
-  @override
-  String toString() => 'ShareAppNotInstalled';
-}
-
-/// The user cancelled the share.
+/// The user cancelled the share dialog.
 final class ShareCancelled extends ShareResult {
   const ShareCancelled();
 
@@ -41,52 +32,57 @@ final class ShareCancelled extends ShareResult {
   String toString() => 'ShareCancelled';
 }
 
-/// Social platforms supported by this package.
-enum SocialPlatform {
-  instagram,
-  facebook;
+/// The requested target or feature is unavailable on this device.
+final class ShareUnavailable extends ShareResult {
+  const ShareUnavailable();
+
+  @override
+  String toString() => 'ShareUnavailable';
+}
+
+/// A share request failed before or during handoff.
+final class ShareFailed extends ShareResult {
+  const ShareFailed(this.code, this.message);
+
+  final ShareErrorCode code;
+  final String message;
+
+  @override
+  String toString() => 'ShareFailed($code, $message)';
+}
+
+/// Stable error categories returned by native implementations.
+enum ShareErrorCode {
+  invalidInput,
+  fileNotFound,
+  unsupportedMedia,
+  permissionDenied,
+  busy,
+  platformError,
 }
 
 /// Configuration for sharing to Instagram or Facebook Stories.
 final class StoryConfig {
   const StoryConfig({
     required this.appId,
-    this.stickerImage,
-    this.backgroundImage,
-    this.backgroundVideo,
+    this.stickerPath,
+    this.backgroundImagePath,
+    this.backgroundVideoPath,
     this.backgroundTopColor,
     this.backgroundBottomColor,
-    this.attributionURL,
+    this.attributionUrl,
   });
 
-  /// Your Facebook App ID (required by both Instagram and Facebook).
   final String appId;
+  final String? stickerPath;
+  final String? backgroundImagePath;
+  final String? backgroundVideoPath;
+  final Color? backgroundTopColor;
+  final Color? backgroundBottomColor;
+  final Uri? attributionUrl;
 
-  /// Absolute file path to a sticker image overlay.
-  final String? stickerImage;
+  bool get hasBackground =>
+      backgroundImagePath != null || backgroundVideoPath != null;
 
-  /// Absolute file path to a background image.
-  final String? backgroundImage;
-
-  /// Absolute file path to a background video.
-  final String? backgroundVideo;
-
-  /// Hex color string for the top gradient (e.g. "#FF0000").
-  final String? backgroundTopColor;
-
-  /// Hex color string for the bottom gradient (e.g. "#0000FF").
-  final String? backgroundBottomColor;
-
-  /// URL attributed to the story content.
-  final String? attributionURL;
-
-  Map<String, String?> toMap() => {
-        'appId': appId,
-        'stickerImage': stickerImage,
-        'backgroundImage': backgroundImage,
-        'backgroundVideo': backgroundVideo,
-        'backgroundTopColor': backgroundTopColor,
-        'backgroundBottomColor': backgroundBottomColor,
-        'attributionURL': attributionURL,
-      };
+  bool get hasContent => hasBackground || stickerPath != null;
 }

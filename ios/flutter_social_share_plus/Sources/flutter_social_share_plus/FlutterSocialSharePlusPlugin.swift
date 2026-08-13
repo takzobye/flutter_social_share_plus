@@ -1,11 +1,11 @@
+import FBSDKCoreKit
 import Flutter
 import UIKit
 
-public class FlutterSocialSharePlusPlugin: NSObject, FlutterPlugin {
-
+public final class FlutterSocialSharePlusPlugin: NSObject, FlutterPlugin, FlutterSceneLifeCycleDelegate {
     private let instagramHandler = InstagramShareHandler()
     private let facebookHandler = FacebookShareHandler()
-    private let systemHandler = SystemShareHandler()
+    private weak var viewController: UIViewController?
 
     public static func register(with registrar: FlutterPluginRegistrar) {
         let channel = FlutterMethodChannel(
@@ -13,81 +13,116 @@ public class FlutterSocialSharePlusPlugin: NSObject, FlutterPlugin {
             binaryMessenger: registrar.messenger()
         )
         let instance = FlutterSocialSharePlusPlugin()
+        instance.viewController = registrar.viewController
         registrar.addMethodCallDelegate(instance, channel: channel)
+        registrar.addApplicationDelegate(instance)
+        if #available(iOS 13.0, *) {
+            registrar.addSceneDelegate(instance)
+        }
     }
 
     public func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
         let args = call.arguments as? [String: Any] ?? [:]
 
         switch call.method {
-        case "getInstalledApps":
-            let apps: [String: Bool] = [
-                "instagram": canOpenURL("instagram://"),
-                "facebook": canOpenURL("fb://") || canOpenURL("facebook-stories://"),
-            ]
-            result(apps)
-
-        // Instagram
-        case "instagramDirect":
-            let message = args["message"] as? String ?? ""
-            instagramHandler.shareDirect(message: message, result: result)
-
+        case "isAvailable":
+            result(["available": isAvailable(target: args["target"] as? String)])
         case "instagramFeed":
-            let filePath = args["filePath"] as? String ?? ""
-            instagramHandler.shareFeed(filePath: filePath, result: result)
-
-        case "instagramFeedMultiple":
-            let filePaths = args["filePaths"] as? [String] ?? []
-            instagramHandler.shareFeed(filePath: filePaths.first ?? "", result: result)
-
-        case "instagramReels":
-            let videoPath = args["videoPath"] as? String ?? ""
-            instagramHandler.shareReels(videoPath: videoPath, result: result)
-
+            instagramHandler.shareFeed(filePath: args["filePath"] as? String, result: result)
         case "instagramStory":
             instagramHandler.shareStory(
-                appId: args["appId"] as? String ?? "",
-                stickerImage: args["stickerImage"] as? String,
-                backgroundImage: args["backgroundImage"] as? String,
-                backgroundVideo: args["backgroundVideo"] as? String,
+                appId: args["appId"] as? String,
+                stickerPath: args["stickerPath"] as? String,
+                backgroundImagePath: args["backgroundImagePath"] as? String,
+                backgroundVideoPath: args["backgroundVideoPath"] as? String,
                 backgroundTopColor: args["backgroundTopColor"] as? String,
                 backgroundBottomColor: args["backgroundBottomColor"] as? String,
-                attributionURL: args["attributionURL"] as? String,
+                attributionUrl: args["attributionUrl"] as? String,
                 result: result
             )
-
-        // Facebook
         case "facebookFeed":
-            let filePaths = args["filePaths"] as? [String] ?? []
-            let hashtag = args["hashtag"] as? String
-            facebookHandler.shareFeed(filePaths: filePaths, hashtag: hashtag, result: result)
-
+            facebookHandler.shareFeed(
+                filePaths: args["imagePaths"] as? [String],
+                hashtag: args["hashtag"] as? String,
+                presenter: viewController,
+                result: result
+            )
         case "facebookStory":
             facebookHandler.shareStory(
-                appId: args["appId"] as? String ?? "",
-                stickerImage: args["stickerImage"] as? String,
-                backgroundImage: args["backgroundImage"] as? String,
-                backgroundVideo: args["backgroundVideo"] as? String,
+                appId: args["appId"] as? String,
+                stickerPath: args["stickerPath"] as? String,
+                backgroundImagePath: args["backgroundImagePath"] as? String,
+                backgroundVideoPath: args["backgroundVideoPath"] as? String,
                 backgroundTopColor: args["backgroundTopColor"] as? String,
                 backgroundBottomColor: args["backgroundBottomColor"] as? String,
-                attributionURL: args["attributionURL"] as? String,
+                attributionUrl: args["attributionUrl"] as? String,
                 result: result
             )
-
-        // System
-        case "shareSystem":
-            let text = args["text"] as? String
-            let filePaths = args["filePaths"] as? [String]
-            let subject = args["subject"] as? String
-            systemHandler.share(text: text, filePaths: filePaths, subject: subject, result: result)
-
         default:
             result(FlutterMethodNotImplemented)
         }
     }
 
-    private func canOpenURL(_ urlString: String) -> Bool {
-        guard let url = URL(string: urlString) else { return false }
-        return UIApplication.shared.canOpenURL(url)
+    public func application(
+        _ application: UIApplication,
+        didFinishLaunchingWithOptions launchOptions: [AnyHashable: Any] = [:]
+    ) -> Bool {
+        // Facebook initialization is deferred until a Facebook share is requested.
+        false
+    }
+
+    public func application(
+        _ application: UIApplication,
+        open url: URL,
+        options: [UIApplication.OpenURLOptionsKey: Any] = [:]
+    ) -> Bool {
+        ApplicationDelegate.shared.application(application, open: url, options: options)
+    }
+
+    public func application(
+        _ application: UIApplication,
+        open url: URL,
+        sourceApplication: String,
+        annotation: Any
+    ) -> Bool {
+        ApplicationDelegate.shared.application(
+            application,
+            open: url,
+            sourceApplication: sourceApplication,
+            annotation: annotation
+        )
+    }
+
+    public func application(
+        _ application: UIApplication,
+        continue userActivity: NSUserActivity,
+        restorationHandler: @escaping ([Any]) -> Void
+    ) -> Bool {
+        ApplicationDelegate.shared.application(application, continue: userActivity)
+    }
+
+    @available(iOS 13.0, *)
+    public func scene(
+        _ scene: UIScene,
+        openURLContexts URLContexts: Set<UIOpenURLContext>
+    ) -> Bool {
+        URLContexts.contains { context in
+            ApplicationDelegate.shared.application(
+                UIApplication.shared,
+                open: context.url,
+                sourceApplication: context.options.sourceApplication,
+                annotation: context.options.annotation
+            )
+        }
+    }
+
+    private func isAvailable(target: String?) -> Bool {
+        switch target {
+        case "instagramFeed": instagramHandler.isFeedAvailable()
+        case "instagramStory": instagramHandler.isStoryAvailable()
+        case "facebookFeed": facebookHandler.isFeedAvailable()
+        case "facebookStory": facebookHandler.isStoryAvailable()
+        default: false
+        }
     }
 }

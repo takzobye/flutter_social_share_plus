@@ -18,6 +18,38 @@ internal data class PreparedMedia(
     val mimeType: String,
 )
 
+internal typealias MediaPreparationCallback =
+    (List<PreparedMedia>?, Map<String, String>?) -> Unit
+
+internal fun interface MediaPreparer {
+    fun prepareAsync(
+        context: Context,
+        paths: List<String>,
+        maxVideoBytes: Long?,
+        callback: MediaPreparationCallback,
+    )
+}
+
+internal fun interface MediaAvailability {
+    fun canHandle(context: Context, intent: Intent): Boolean
+}
+
+internal object ShareMediaPreparer : MediaPreparer {
+    override fun prepareAsync(
+        context: Context,
+        paths: List<String>,
+        maxVideoBytes: Long?,
+        callback: MediaPreparationCallback,
+    ) {
+        ShareMedia.prepareAsync(context, paths, maxVideoBytes, callback)
+    }
+}
+
+internal object ShareMediaAvailability : MediaAvailability {
+    override fun canHandle(context: Context, intent: Intent): Boolean =
+        ShareMedia.canHandle(context, intent)
+}
+
 internal object ShareMedia {
     private const val AUTHORITY_SUFFIX = ".flutter_social_share_plus.fileprovider"
     private const val CACHE_DIRECTORY = "flutter_social_share_plus"
@@ -28,11 +60,12 @@ internal object ShareMedia {
         context: Context,
         paths: List<String>,
         maxVideoBytes: Long? = null,
-        callback: (List<PreparedMedia>?, Map<String, String>?) -> Unit,
+        callback: MediaPreparationCallback,
     ) {
+        val applicationContext = context.applicationContext ?: context
         executor.execute {
             val preparation = try {
-                prepare(context, paths, maxVideoBytes) to null
+                prepare(applicationContext, paths, maxVideoBytes) to null
             } catch (error: PreparationException) {
                 null to ShareResponse.failed(error.code, error.message)
             } catch (error: Exception) {

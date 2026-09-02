@@ -14,6 +14,13 @@ analyzer:
     - references/**
     - prototype/**
     - flutter_package_example/**
+    - build/**
+    - android/**
+    - ios/**
+    - web/**
+    - windows/**
+    - macos/**
+    - linux/**
 
 linter:
   # The lint rules applied to this project can be customized in the

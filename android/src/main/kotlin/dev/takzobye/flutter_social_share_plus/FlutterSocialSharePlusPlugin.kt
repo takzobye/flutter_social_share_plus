@@ -78,27 +78,32 @@ class FlutterSocialSharePlusPlugin : FlutterPlugin, MethodCallHandler, ActivityA
     }
 
     override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
+        instagramHandler.onDetachedFromEngine()
         facebookHandler.onDetachedFromEngine()
         channel.setMethodCallHandler(null)
     }
 
     override fun onAttachedToActivity(binding: ActivityPluginBinding) {
         activity = binding.activity
+        instagramHandler.onAttachedToActivity(binding)
         facebookHandler.onAttachedToActivity(binding)
     }
 
     override fun onDetachedFromActivityForConfigChanges() {
         activity = null
+        instagramHandler.onDetachedFromActivityForConfigChanges()
         facebookHandler.onDetachedFromActivityForConfigChanges()
     }
 
     override fun onReattachedToActivityForConfigChanges(binding: ActivityPluginBinding) {
         activity = binding.activity
+        instagramHandler.onAttachedToActivity(binding)
         facebookHandler.onAttachedToActivity(binding)
     }
 
     override fun onDetachedFromActivity() {
         activity = null
+        instagramHandler.onDetachedFromActivity()
         facebookHandler.onDetachedFromActivity()
     }
 

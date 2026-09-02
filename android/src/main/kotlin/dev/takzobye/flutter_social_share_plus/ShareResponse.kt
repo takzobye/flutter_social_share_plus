@@ -14,4 +14,8 @@ internal object ShareResponse {
         "code" to code,
         "message" to message,
     )
+
+    fun activityRecreated() = failed("platform_error", "Activity recreated")
+
+    fun activityDetached() = failed("platform_error", "Activity detached")
 }

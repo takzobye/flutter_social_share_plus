@@ -15,15 +15,20 @@ import io.flutter.embedding.engine.plugins.activity.ActivityPluginBinding
 import io.flutter.plugin.common.MethodChannel.Result
 import io.flutter.plugin.common.PluginRegistry
 
-class FacebookShareHandler {
+class FacebookShareHandler internal constructor(
+    private val mediaPreparer: MediaPreparer = ShareMediaPreparer,
+    private val activityRequests: ActivityRequestScope<Activity> = ActivityRequestScope(),
+    private val mediaAvailability: MediaAvailability = ShareMediaAvailability,
+) {
     private var callbackManager: CallbackManager? = null
     private var activityBinding: ActivityPluginBinding? = null
     private var activityResultListener: PluginRegistry.ActivityResultListener? = null
-    private var pendingResult: Result? = null
+    private var feedRequest: ActivityRequest? = null
 
     fun onAttachedToActivity(binding: ActivityPluginBinding) {
         removeActivityResultListener()
         activityBinding = binding
+        activityRequests.attach(binding.activity)
         callbackManager = callbackManager ?: CallbackManager.Factory.create()
         val listener = PluginRegistry.ActivityResultListener { requestCode, resultCode, data ->
             callbackManager?.onActivityResult(requestCode, resultCode, data) == true
@@ -35,13 +40,16 @@ class FacebookShareHandler {
     fun onDetachedFromActivityForConfigChanges() {
         removeActivityResultListener()
         activityBinding = null
-        finish(ShareResponse.failed("platform_error", "Activity recreated"))
+        feedRequest = null
+        activityRequests.detach(ShareResponse.activityRecreated())
+        callbackManager = null
     }
 
     fun onDetachedFromActivity() {
         removeActivityResultListener()
         activityBinding = null
-        finish(ShareResponse.failed("platform_error", "Activity detached"))
+        feedRequest = null
+        activityRequests.detach(ShareResponse.activityDetached())
         callbackManager = null
     }
 
@@ -66,7 +74,7 @@ class FacebookShareHandler {
             result.success(ShareResponse.failed("invalid_input", "Hashtags must start with #"))
             return
         }
-        if (pendingResult != null) {
+        if (feedRequest != null) {
             result.success(ShareResponse.failed("busy", "A Facebook share is already open"))
             return
         }
@@ -75,77 +83,113 @@ class FacebookShareHandler {
             return
         }
 
-        pendingResult = result
-        ShareMedia.prepareAsync(activity, paths) { media, error ->
-            if (error != null) {
-                finish(error)
-                return@prepareAsync
-            }
-            val prepared = media.orEmpty()
-            if (prepared.size != paths.size) {
-                finish(ShareResponse.failed("platform_error", "Unable to prepare images"))
-                return@prepareAsync
-            }
-            if (prepared.any { !it.mimeType.startsWith("image/") }) {
-                finish(ShareResponse.failed("unsupported_media", "Facebook Feed accepts images only"))
-                return@prepareAsync
-            }
+        val request = activityRequests.begin { response -> result.success(response) }
+        if (request == null) {
+            result.success(ShareResponse.failed("platform_error", "Activity not available"))
+            return
+        }
+        feedRequest = request
 
-            try {
-                val photos = prepared.map { mediaFile ->
-                    SharePhoto.Builder()
-                        .setImageUrl(mediaFile.uri)
-                        .setUserGenerated(true)
-                        .build()
+        try {
+            mediaPreparer.prepareAsync(
+                context = activity.applicationContext,
+                paths = paths,
+                maxVideoBytes = null,
+            ) { media, error ->
+                val currentActivity = activityRequests.activityFor(request)
+                    ?: return@prepareAsync
+                if (error != null) {
+                    completeFeed(request, error)
+                    return@prepareAsync
                 }
-                val contentBuilder = SharePhotoContent.Builder().setPhotos(photos)
-                if (!hashtag.isNullOrBlank()) {
-                    contentBuilder.setShareHashtag(
-                        ShareHashtag.Builder().setHashtag(hashtag).build()
+                val prepared = media.orEmpty()
+                if (prepared.size != paths.size) {
+                    completeFeed(
+                        request,
+                        ShareResponse.failed("platform_error", "Unable to prepare images"),
                     )
+                    return@prepareAsync
                 }
-                val content = contentBuilder.build()
-                val manager = callbackManager
-                if (manager == null) {
-                    finish(ShareResponse.failed("platform_error", "Facebook SDK is unavailable"))
+                if (prepared.any { !it.mimeType.startsWith("image/") }) {
+                    completeFeed(
+                        request,
+                        ShareResponse.failed(
+                            "unsupported_media",
+                            "Facebook Feed accepts images only",
+                        ),
+                    )
                     return@prepareAsync
                 }
 
-                val dialog = ShareDialog(activity)
-                dialog.registerCallback(manager, object : FacebookCallback<Sharer.Result> {
-                    override fun onSuccess(result: Sharer.Result) {
-                        finish(ShareResponse.completed())
+                try {
+                    val photos = prepared.map { mediaFile ->
+                        SharePhoto.Builder()
+                            .setImageUrl(mediaFile.uri)
+                            .setUserGenerated(true)
+                            .build()
                     }
-
-                    override fun onCancel() {
-                        finish(ShareResponse.cancelled())
-                    }
-
-                    override fun onError(error: FacebookException) {
-                        finish(
-                            ShareResponse.failed(
-                                "platform_error",
-                                error.message ?: "Facebook share failed",
-                            )
+                    val contentBuilder = SharePhotoContent.Builder().setPhotos(photos)
+                    if (!hashtag.isNullOrBlank()) {
+                        contentBuilder.setShareHashtag(
+                            ShareHashtag.Builder().setHashtag(hashtag).build()
                         )
                     }
-                })
+                    val content = contentBuilder.build()
+                    val manager = callbackManager
+                    if (manager == null) {
+                        completeFeed(
+                            request,
+                            ShareResponse.failed("platform_error", "Facebook SDK is unavailable"),
+                        )
+                        return@prepareAsync
+                    }
 
-                if (dialog.canShow(content, ShareDialog.Mode.NATIVE)) {
-                    dialog.show(content, ShareDialog.Mode.NATIVE)
-                } else if (dialog.canShow(content)) {
-                    dialog.show(content)
-                } else {
-                    finish(ShareResponse.unavailable())
-                }
-            } catch (error: Exception) {
-                finish(
-                    ShareResponse.failed(
-                        "platform_error",
-                        error.message ?: "Unable to open Facebook",
+                    val dialog = ShareDialog(currentActivity)
+                    dialog.registerCallback(manager, object : FacebookCallback<Sharer.Result> {
+                        override fun onSuccess(result: Sharer.Result) {
+                            completeFeed(request, ShareResponse.completed())
+                        }
+
+                        override fun onCancel() {
+                            completeFeed(request, ShareResponse.cancelled())
+                        }
+
+                        override fun onError(error: FacebookException) {
+                            completeFeed(
+                                request,
+                                ShareResponse.failed(
+                                    "platform_error",
+                                    error.message ?: "Facebook share failed",
+                                ),
+                            )
+                        }
+                    })
+
+                    if (dialog.canShow(content, ShareDialog.Mode.NATIVE)) {
+                        dialog.show(content, ShareDialog.Mode.NATIVE)
+                    } else if (dialog.canShow(content)) {
+                        dialog.show(content)
+                    } else {
+                        completeFeed(request, ShareResponse.unavailable())
+                    }
+                } catch (error: Exception) {
+                    completeFeed(
+                        request,
+                        ShareResponse.failed(
+                            "platform_error",
+                            error.message ?: "Unable to open Facebook",
+                        ),
                     )
-                )
+                }
             }
+        } catch (error: Exception) {
+            completeFeed(
+                request,
+                ShareResponse.failed(
+                    "platform_error",
+                    error.message ?: "Unable to prepare images",
+                ),
+            )
         }
     }
 
@@ -179,9 +223,9 @@ class FacebookShareHandler {
             return
         }
         val packageName = FACEBOOK_PACKAGES.firstOrNull { packageName ->
-            ShareMedia.canHandle(
+            mediaAvailability.canHandle(
                 activity,
-                Intent(FACEBOOK_STORY_ACTION).setPackage(packageName),
+                Intent(FACEBOOK_STORY_ACTION).apply { setPackage(packageName) },
             )
         }
         if (packageName == null) {
@@ -189,80 +233,126 @@ class FacebookShareHandler {
             return
         }
 
-        ShareMedia.prepareAsync(
-            activity,
-            paths,
-            maxVideoBytes = MAX_STORY_VIDEO_BYTES,
-        ) { media, error ->
-            if (error != null) {
-                result.success(error)
-                return@prepareAsync
-            }
-            val prepared = media ?: run {
-                result.success(ShareResponse.failed("platform_error", "Unable to prepare Story"))
-                return@prepareAsync
-            }
-            val sticker = stickerPath?.let { prepared[paths.indexOf(it)] }
-            val backgroundImage = backgroundImagePath?.let { prepared[paths.indexOf(it)] }
-            val backgroundVideo = backgroundVideoPath?.let { prepared[paths.indexOf(it)] }
-            if (sticker != null && !sticker.mimeType.startsWith("image/")) {
-                result.success(ShareResponse.failed("unsupported_media", "Sticker must be an image"))
-                return@prepareAsync
-            }
-            if (backgroundImage != null && !backgroundImage.mimeType.startsWith("image/")) {
-                result.success(ShareResponse.failed("unsupported_media", "Background must be an image"))
-                return@prepareAsync
-            }
-            if (backgroundVideo != null && !backgroundVideo.mimeType.startsWith("video/")) {
-                result.success(ShareResponse.failed("unsupported_media", "Background must be a video"))
-                return@prepareAsync
-            }
-            val shareIntent = Intent(FACEBOOK_STORY_ACTION).apply {
-                setPackage(packageName)
-                putExtra("com.facebook.platform.extra.APPLICATION_ID", appId)
-                backgroundImage?.let { mediaFile ->
-                    data = mediaFile.uri
-                    type = mediaFile.mimeType
-                    clipData = ClipData.newRawUri("background", mediaFile.uri)
+        val request = activityRequests.begin { response -> result.success(response) }
+        if (request == null) {
+            result.success(ShareResponse.failed("platform_error", "Activity not available"))
+            return
+        }
+
+        try {
+            mediaPreparer.prepareAsync(
+                context = activity.applicationContext,
+                paths = paths,
+                maxVideoBytes = MAX_STORY_VIDEO_BYTES,
+            ) { media, error ->
+                val currentActivity = activityRequests.activityFor(request)
+                    ?: return@prepareAsync
+                if (error != null) {
+                    activityRequests.complete(request, error)
+                    return@prepareAsync
                 }
-                backgroundVideo?.let { mediaFile ->
-                    data = mediaFile.uri
-                    type = mediaFile.mimeType
-                    clipData = ClipData.newRawUri("background", mediaFile.uri)
-                }
-                sticker?.let { mediaFile -> putExtra("interactive_asset_uri", mediaFile.uri) }
-                backgroundTopColor?.let { putExtra("top_background_color", it) }
-                backgroundBottomColor?.let { putExtra("bottom_background_color", it) }
-                attributionUrl?.let { putExtra("content_url", it) }
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            }
-            try {
-                backgroundImage?.let { ShareMedia.grant(activity, it, packageName) }
-                backgroundVideo?.let { ShareMedia.grant(activity, it, packageName) }
-                sticker?.let { ShareMedia.grant(activity, it, packageName) }
-                activity.startActivity(shareIntent)
-                result.success(ShareResponse.launched())
-            } catch (error: Exception) {
-                result.success(
-                    ShareResponse.failed(
-                        "platform_error",
-                        error.message ?: "Unable to open Facebook Stories",
+                val prepared = media ?: run {
+                    activityRequests.complete(
+                        request,
+                        ShareResponse.failed("platform_error", "Unable to prepare Story"),
                     )
-                )
+                    return@prepareAsync
+                }
+
+                try {
+                    val sticker = stickerPath?.let { prepared[paths.indexOf(it)] }
+                    val backgroundImage = backgroundImagePath?.let { prepared[paths.indexOf(it)] }
+                    val backgroundVideo = backgroundVideoPath?.let { prepared[paths.indexOf(it)] }
+                    if (sticker != null && !sticker.mimeType.startsWith("image/")) {
+                        activityRequests.complete(
+                            request,
+                            ShareResponse.failed("unsupported_media", "Sticker must be an image"),
+                        )
+                        return@prepareAsync
+                    }
+                    if (backgroundImage != null && !backgroundImage.mimeType.startsWith("image/")) {
+                        activityRequests.complete(
+                            request,
+                            ShareResponse.failed(
+                                "unsupported_media",
+                                "Background must be an image",
+                            ),
+                        )
+                        return@prepareAsync
+                    }
+                    if (backgroundVideo != null && !backgroundVideo.mimeType.startsWith("video/")) {
+                        activityRequests.complete(
+                            request,
+                            ShareResponse.failed(
+                                "unsupported_media",
+                                "Background must be a video",
+                            ),
+                        )
+                        return@prepareAsync
+                    }
+                    val shareIntent = Intent(FACEBOOK_STORY_ACTION).apply {
+                        setPackage(packageName)
+                        putExtra("com.facebook.platform.extra.APPLICATION_ID", appId)
+                        backgroundImage?.let { mediaFile ->
+                            data = mediaFile.uri
+                            type = mediaFile.mimeType
+                            clipData = ClipData.newRawUri("background", mediaFile.uri)
+                        }
+                        backgroundVideo?.let { mediaFile ->
+                            data = mediaFile.uri
+                            type = mediaFile.mimeType
+                            clipData = ClipData.newRawUri("background", mediaFile.uri)
+                        }
+                        sticker?.let { mediaFile ->
+                            putExtra("interactive_asset_uri", mediaFile.uri)
+                        }
+                        backgroundTopColor?.let { putExtra("top_background_color", it) }
+                        backgroundBottomColor?.let { putExtra("bottom_background_color", it) }
+                        attributionUrl?.let { putExtra("content_url", it) }
+                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    }
+                    backgroundImage?.let { ShareMedia.grant(currentActivity, it, packageName) }
+                    backgroundVideo?.let { ShareMedia.grant(currentActivity, it, packageName) }
+                    sticker?.let { ShareMedia.grant(currentActivity, it, packageName) }
+                    currentActivity.startActivity(shareIntent)
+                    activityRequests.complete(request, ShareResponse.launched())
+                } catch (error: Exception) {
+                    activityRequests.complete(
+                        request,
+                        ShareResponse.failed(
+                            "platform_error",
+                            error.message ?: "Unable to open Facebook Stories",
+                        ),
+                    )
+                }
             }
+        } catch (error: Exception) {
+            activityRequests.complete(
+                request,
+                ShareResponse.failed(
+                    "platform_error",
+                    error.message ?: "Unable to prepare Story",
+                ),
+            )
         }
     }
 
     private fun isFacebookFeedAvailable(activity: Activity): Boolean {
         val intent = Intent(Intent.ACTION_SEND).apply { type = "image/*" }
         return FACEBOOK_PACKAGES.any { packageName ->
-            ShareMedia.canHandle(activity, Intent(intent).setPackage(packageName))
+            mediaAvailability.canHandle(
+                activity,
+                Intent(intent).apply { setPackage(packageName) },
+            )
         }
     }
 
-    private fun finish(response: Map<String, String>) {
-        pendingResult?.success(response)
-        pendingResult = null
+    private fun completeFeed(request: ActivityRequest, response: Map<String, String>) {
+        if (feedRequest !== request) {
+            return
+        }
+        feedRequest = null
+        activityRequests.complete(request, response)
     }
 
     private fun removeActivityResultListener() {

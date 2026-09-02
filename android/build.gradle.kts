@@ -2,14 +2,14 @@ group = "dev.takzobye.flutter_social_share_plus"
 version = "1.0-SNAPSHOT"
 
 buildscript {
-    val kotlinVersion = "2.2.20"
+    val kotlinVersion = "2.3.20"
     repositories {
         google()
         mavenCentral()
     }
 
     dependencies {
-        classpath("com.android.tools.build:gradle:8.11.1")
+        classpath("com.android.tools.build:gradle:8.13.2")
         classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlinVersion")
     }
 }
@@ -23,7 +23,6 @@ allprojects {
 
 plugins {
     id("com.android.library")
-    id("kotlin-android")
 }
 
 android {
@@ -34,10 +33,6 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
-    }
-
-    kotlinOptions {
-        jvmTarget = JavaVersion.VERSION_17.toString()
     }
 
     sourceSets {
@@ -56,6 +51,7 @@ android {
     testOptions {
         unitTests {
             isIncludeAndroidResources = true
+            isReturnDefaultValues = true
             all {
                 it.useJUnitPlatform()
 
@@ -70,8 +66,14 @@ android {
     }
 }
 
+kotlin {
+    compilerOptions {
+        jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17
+    }
+}
+
 dependencies {
-    implementation("com.facebook.android:facebook-share:17.0.0")
+    implementation("com.facebook.android:facebook-share:18.2.3")
     testImplementation("org.jetbrains.kotlin:kotlin-test")
     testImplementation("org.mockito:mockito-core:5.0.0")
 }

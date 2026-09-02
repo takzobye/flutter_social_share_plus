@@ -1,7 +1,6 @@
 /// Flutter plugin for sharing content to Instagram and Facebook.
 ///
-/// Supports feed posts, stories, reels, and direct messages on both
-/// iOS and Android platforms.
+/// Supports Instagram and Facebook feed posts and stories on iOS and Android.
 library;
 
 export 'src/social_share_plus.dart';

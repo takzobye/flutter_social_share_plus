@@ -1,204 +1,252 @@
 package dev.takzobye.flutter_social_share_plus
 
 import android.app.Activity
+import android.content.ClipData
 import android.content.Intent
-import android.net.Uri
-import androidx.core.content.FileProvider
+import io.flutter.embedding.engine.plugins.activity.ActivityPluginBinding
 import io.flutter.plugin.common.MethodChannel.Result
-import java.io.File
 
-class InstagramShareHandler {
-
-    companion object {
-        private const val INSTAGRAM_PACKAGE = "com.instagram.android"
-        private const val INSTAGRAM_STORY_ACTION = "com.instagram.share.ADD_TO_STORY"
+class InstagramShareHandler internal constructor(
+    private val mediaPreparer: MediaPreparer = ShareMediaPreparer,
+    private val activityRequests: ActivityRequestScope<Activity> = ActivityRequestScope(),
+    private val mediaAvailability: MediaAvailability = ShareMediaAvailability,
+) {
+    fun onAttachedToActivity(binding: ActivityPluginBinding) {
+        activityRequests.attach(binding.activity)
     }
 
-    fun shareDirect(activity: Activity, message: String, result: Result) {
-        if (!isInstagramInstalled(activity)) {
-            result.success("APP_NOT_INSTALLED")
-            return
-        }
-        val intent = Intent(Intent.ACTION_SEND).apply {
-            type = "text/plain"
-            setPackage(INSTAGRAM_PACKAGE)
-            putExtra(Intent.EXTRA_TEXT, message)
-        }
-        activity.startActivity(intent)
-        result.success("SUCCESS")
+    fun onDetachedFromActivityForConfigChanges() {
+        activityRequests.detach(ShareResponse.activityRecreated())
     }
 
-    fun shareFeed(activity: Activity, filePath: String, message: String?, result: Result) {
-        if (!isInstagramInstalled(activity)) {
-            result.success("APP_NOT_INSTALLED")
-            return
-        }
-        val file = File(filePath)
-        if (!file.exists()) {
-            result.success("ERROR:File not found: $filePath")
-            return
-        }
-        val uri = getFileUri(activity, file)
-        val mimeType = getMimeType(file)
+    fun onDetachedFromActivity() {
+        activityRequests.detach(ShareResponse.activityDetached())
+    }
 
-        val intent = Intent(Intent.ACTION_SEND).apply {
-            type = mimeType
-            setPackage(INSTAGRAM_PACKAGE)
-            putExtra(Intent.EXTRA_STREAM, uri)
-            if (!message.isNullOrEmpty()) {
-                putExtra(Intent.EXTRA_TEXT, message)
+    fun onDetachedFromEngine() {
+        onDetachedFromActivity()
+    }
+
+    fun shareFeed(activity: Activity, filePath: String?, result: Result) {
+        val path = filePath?.takeIf { it.isNotBlank() }
+        if (path == null) {
+            result.success(ShareResponse.failed("invalid_input", "A media path is required"))
+            return
+        }
+
+        val intent = Intent(Intent.ACTION_SEND).apply { setPackage(INSTAGRAM_PACKAGE) }
+        if (!listOf("image/*", "video/*").any { type ->
+                mediaAvailability.canHandle(activity, Intent(intent).apply { setType(type) })
+            }) {
+            result.success(ShareResponse.unavailable())
+            return
+        }
+
+        val request = activityRequests.begin { response -> result.success(response) }
+        if (request == null) {
+            result.success(ShareResponse.failed("platform_error", "Activity not available"))
+            return
+        }
+
+        try {
+            mediaPreparer.prepareAsync(
+                context = activity.applicationContext,
+                paths = listOf(path),
+                maxVideoBytes = null,
+            ) { media, error ->
+                val currentActivity = activityRequests.activityFor(request)
+                    ?: return@prepareAsync
+                if (error != null) {
+                    activityRequests.complete(request, error)
+                    return@prepareAsync
+                }
+                val prepared = media?.singleOrNull()
+                if (prepared == null) {
+                    activityRequests.complete(
+                        request,
+                        ShareResponse.failed("platform_error", "Unable to prepare media"),
+                    )
+                    return@prepareAsync
+                }
+                if (!prepared.mimeType.startsWith("image/") &&
+                    !prepared.mimeType.startsWith("video/")
+                ) {
+                    activityRequests.complete(
+                        request,
+                        ShareResponse.failed(
+                            "unsupported_media",
+                            "Instagram requires an image or video",
+                        ),
+                    )
+                    return@prepareAsync
+                }
+
+                val shareIntent = Intent(intent).apply {
+                    type = prepared.mimeType
+                    putExtra(Intent.EXTRA_STREAM, prepared.uri)
+                    clipData = ClipData.newRawUri("shared media", prepared.uri)
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+                try {
+                    ShareMedia.grant(currentActivity, prepared, INSTAGRAM_PACKAGE)
+                    currentActivity.startActivity(shareIntent)
+                    activityRequests.complete(request, ShareResponse.launched())
+                } catch (error: Exception) {
+                    activityRequests.complete(
+                        request,
+                        ShareResponse.failed(
+                            "platform_error",
+                            error.message ?: "Unable to open Instagram",
+                        ),
+                    )
+                }
             }
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        } catch (error: Exception) {
+            activityRequests.complete(
+                request,
+                ShareResponse.failed(
+                    "platform_error",
+                    error.message ?: "Unable to prepare media",
+                ),
+            )
         }
-        activity.startActivity(intent)
-        result.success("SUCCESS")
-    }
-
-    fun shareFeedMultiple(activity: Activity, filePaths: List<String>, result: Result) {
-        if (!isInstagramInstalled(activity)) {
-            result.success("APP_NOT_INSTALLED")
-            return
-        }
-        if (filePaths.isEmpty()) {
-            result.success("ERROR:No files provided")
-            return
-        }
-        val uris = ArrayList<Uri>()
-        for (path in filePaths) {
-            val file = File(path)
-            if (file.exists()) {
-                uris.add(getFileUri(activity, file))
-            }
-        }
-        if (uris.isEmpty()) {
-            result.success("ERROR:No valid files found")
-            return
-        }
-
-        val intent = Intent(Intent.ACTION_SEND_MULTIPLE).apply {
-            type = "image/*"
-            setPackage(INSTAGRAM_PACKAGE)
-            putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris)
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        }
-        activity.startActivity(intent)
-        result.success("SUCCESS")
-    }
-
-    fun shareReels(activity: Activity, videoPath: String, result: Result) {
-        if (!isInstagramInstalled(activity)) {
-            result.success("APP_NOT_INSTALLED")
-            return
-        }
-        val file = File(videoPath)
-        if (!file.exists()) {
-            result.success("ERROR:File not found: $videoPath")
-            return
-        }
-        val uri = getFileUri(activity, file)
-
-        val intent = Intent(Intent.ACTION_SEND).apply {
-            type = "video/*"
-            setPackage(INSTAGRAM_PACKAGE)
-            putExtra(Intent.EXTRA_STREAM, uri)
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        }
-        activity.startActivity(intent)
-        result.success("SUCCESS")
     }
 
     fun shareStory(
         activity: Activity,
-        appId: String,
-        stickerImage: String?,
-        backgroundImage: String?,
-        backgroundVideo: String?,
+        appId: String?,
+        stickerPath: String?,
+        backgroundImagePath: String?,
+        backgroundVideoPath: String?,
         backgroundTopColor: String?,
         backgroundBottomColor: String?,
-        attributionURL: String?,
+        attributionUrl: String?,
         result: Result,
     ) {
-        if (!isInstagramInstalled(activity)) {
-            result.success("APP_NOT_INSTALLED")
+        if (appId.isNullOrBlank()) {
+            result.success(ShareResponse.failed("invalid_input", "A Facebook App ID is required"))
+            return
+        }
+        if (backgroundImagePath != null && backgroundVideoPath != null) {
+            result.success(
+                ShareResponse.failed(
+                    "invalid_input",
+                    "A Story cannot contain both an image and a video background",
+                )
+            )
+            return
+        }
+        val paths = listOfNotNull(stickerPath, backgroundImagePath, backgroundVideoPath)
+        if (paths.isEmpty()) {
+            result.success(ShareResponse.failed("invalid_input", "Story content is required"))
             return
         }
 
         val intent = Intent(INSTAGRAM_STORY_ACTION).apply {
-            putExtra("source_application", appId)
+            setPackage(INSTAGRAM_PACKAGE)
+        }
+        if (!mediaAvailability.canHandle(activity, intent)) {
+            result.success(ShareResponse.unavailable())
+            return
+        }
 
-            backgroundImage?.let { path ->
-                val file = File(path)
-                if (file.exists()) {
-                    val uri = getFileUri(activity, file)
-                    setDataAndType(uri, getMimeType(file))
+        val request = activityRequests.begin { response -> result.success(response) }
+        if (request == null) {
+            result.success(ShareResponse.failed("platform_error", "Activity not available"))
+            return
+        }
+
+        try {
+            mediaPreparer.prepareAsync(
+                context = activity.applicationContext,
+                paths = paths,
+                maxVideoBytes = MAX_STORY_VIDEO_BYTES,
+            ) { media, error ->
+                val currentActivity = activityRequests.activityFor(request)
+                    ?: return@prepareAsync
+                if (error != null) {
+                    activityRequests.complete(request, error)
+                    return@prepareAsync
+                }
+                val prepared = media ?: run {
+                    activityRequests.complete(
+                        request,
+                        ShareResponse.failed("platform_error", "Unable to prepare Story"),
+                    )
+                    return@prepareAsync
+                }
+                val sticker = stickerPath?.let { prepared[paths.indexOf(it)] }
+                val backgroundImage = backgroundImagePath?.let { prepared[paths.indexOf(it)] }
+                val backgroundVideo = backgroundVideoPath?.let { prepared[paths.indexOf(it)] }
+                if (sticker != null && !sticker.mimeType.startsWith("image/")) {
+                    activityRequests.complete(
+                        request,
+                        ShareResponse.failed("unsupported_media", "Sticker must be an image"),
+                    )
+                    return@prepareAsync
+                }
+                if (backgroundImage != null && !backgroundImage.mimeType.startsWith("image/")) {
+                    activityRequests.complete(
+                        request,
+                        ShareResponse.failed("unsupported_media", "Background must be an image"),
+                    )
+                    return@prepareAsync
+                }
+                if (backgroundVideo != null && !backgroundVideo.mimeType.startsWith("video/")) {
+                    activityRequests.complete(
+                        request,
+                        ShareResponse.failed("unsupported_media", "Background must be a video"),
+                    )
+                    return@prepareAsync
+                }
+                val shareIntent = Intent(intent).apply {
+                    putExtra("source_application", appId)
+                    backgroundImage?.let { mediaFile ->
+                        data = mediaFile.uri
+                        type = mediaFile.mimeType
+                        clipData = ClipData.newRawUri("background", mediaFile.uri)
+                    }
+                    backgroundVideo?.let { mediaFile ->
+                        data = mediaFile.uri
+                        type = mediaFile.mimeType
+                        clipData = ClipData.newRawUri("background", mediaFile.uri)
+                    }
+                    sticker?.let { mediaFile -> putExtra("interactive_asset_uri", mediaFile.uri) }
+                    backgroundTopColor?.let { putExtra("top_background_color", it) }
+                    backgroundBottomColor?.let { putExtra("bottom_background_color", it) }
+                    attributionUrl?.let { putExtra("content_url", it) }
                     addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                    activity.grantUriPermission(
-                        INSTAGRAM_PACKAGE, uri, Intent.FLAG_GRANT_READ_URI_PERMISSION
+                }
+                try {
+                    backgroundImage?.let { ShareMedia.grant(currentActivity, it, INSTAGRAM_PACKAGE) }
+                    backgroundVideo?.let { ShareMedia.grant(currentActivity, it, INSTAGRAM_PACKAGE) }
+                    sticker?.let { ShareMedia.grant(currentActivity, it, INSTAGRAM_PACKAGE) }
+                    currentActivity.startActivity(shareIntent)
+                    activityRequests.complete(request, ShareResponse.launched())
+                } catch (error: Exception) {
+                    activityRequests.complete(
+                        request,
+                        ShareResponse.failed(
+                            "platform_error",
+                            error.message ?: "Unable to open Instagram Stories",
+                        ),
                     )
                 }
             }
-
-            backgroundVideo?.let { path ->
-                val file = File(path)
-                if (file.exists()) {
-                    val uri = getFileUri(activity, file)
-                    setDataAndType(uri, "video/*")
-                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                    activity.grantUriPermission(
-                        INSTAGRAM_PACKAGE, uri, Intent.FLAG_GRANT_READ_URI_PERMISSION
-                    )
-                }
-            }
-
-            stickerImage?.let { path ->
-                val file = File(path)
-                if (file.exists()) {
-                    val uri = getFileUri(activity, file)
-                    putExtra("interactive_asset_uri", uri)
-                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                    activity.grantUriPermission(
-                        INSTAGRAM_PACKAGE, uri, Intent.FLAG_GRANT_READ_URI_PERMISSION
-                    )
-                }
-            }
-
-            backgroundTopColor?.let { putExtra("top_background_color", it) }
-            backgroundBottomColor?.let { putExtra("bottom_background_color", it) }
-            attributionURL?.let { putExtra("content_url", it) }
-        }
-
-        activity.startActivity(intent)
-        result.success("SUCCESS")
-    }
-
-    private fun isInstagramInstalled(activity: Activity): Boolean {
-        return try {
-            activity.packageManager.getPackageInfo(INSTAGRAM_PACKAGE, 0)
-            true
-        } catch (_: Exception) {
-            false
+        } catch (error: Exception) {
+            activityRequests.complete(
+                request,
+                ShareResponse.failed(
+                    "platform_error",
+                    error.message ?: "Unable to prepare Instagram Stories",
+                ),
+            )
         }
     }
 
-    private fun getFileUri(activity: Activity, file: File): Uri {
-        return FileProvider.getUriForFile(
-            activity,
-            "${activity.packageName}.provider",
-            file,
-        )
-    }
-
-    private fun getMimeType(file: File): String {
-        val extension = file.extension.lowercase()
-        return when (extension) {
-            "jpg", "jpeg" -> "image/jpeg"
-            "png" -> "image/png"
-            "gif" -> "image/gif"
-            "webp" -> "image/webp"
-            "mp4" -> "video/mp4"
-            "mov" -> "video/quicktime"
-            "avi" -> "video/x-msvideo"
-            else -> "image/*"
-        }
+    private companion object {
+        const val INSTAGRAM_PACKAGE = "com.instagram.android"
+        const val INSTAGRAM_STORY_ACTION = "com.instagram.share.ADD_TO_STORY"
+        const val MAX_STORY_VIDEO_BYTES = 50L * 1024 * 1024
     }
 }

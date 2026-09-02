@@ -7,5 +7,6 @@ void main() {
     expect(find.text('Social Share Plus'), findsOneWidget);
     expect(find.text('Instagram'), findsOneWidget);
     expect(find.text('Facebook'), findsOneWidget);
+    expect(find.text('Pick image or video'), findsOneWidget);
   });
 }
